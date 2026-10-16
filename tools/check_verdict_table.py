@@ -23,6 +23,13 @@ must carry that row's number; and the row's verdict must match the fixture's
 header. Every fixture must be named by exactly one row, and no row number
 may repeat.
 
+The file's running totals are checked the same way. Each
+`**Distribution: ACCEPT a · ACCEPT-MANAGED b · REJECT c — N programs.**`
+caption closes an integration batch and states the census of programs
+`01-N`. It must add up (a + b + c == N) and it must equal the verdicts the
+fixtures numbered `01-N` actually carry. Four of the six captions were
+wrong when written and disagreed with the corpus they describe.
+
 Usage: python3 tools/check_verdict_table.py [--table PATH] [--corpus DIR]
 Exit:  0 = table and corpus agree; 1 = drift found; 2 = guard misuse.
 """
@@ -46,6 +53,15 @@ HEADER_RE = re.compile(
 FILE_RE = re.compile(r"^(\d{2})-(.+)\.hy$")
 # A markdown table separator, e.g. `|----|-----|` — never a row.
 SEPARATOR_RE = re.compile(r"^\|[\s:|-]+\|?$")
+# The running totals caption closing each integration batch:
+# `**Distribution: ACCEPT 10 · ACCEPT-MANAGED 2 · REJECT 24 — 36 programs.**`
+DISTRIBUTION_RE = re.compile(
+    r"^\s*\*\*Distribution:.*?\*\*\s*$", re.M
+)
+DIST_ACCEPT_RE = re.compile(r"ACCEPT\s+(\d+)")
+DIST_MANAGED_RE = re.compile(r"ACCEPT-MANAGED\s+(\d+)")
+DIST_REJECT_RE = re.compile(r"REJECT\s+(\d+)")
+DIST_TOTAL_RE = re.compile(r"(\d+)\s+programs")
 
 
 def normalize_verdict(text):
@@ -78,6 +94,33 @@ def parse_table(table_text):
     return rows
 
 
+def parse_distributions(table_text):
+    """[(line_number, caption, {verdict: n}, total)] for every caption."""
+    captions = []
+    for number, line in enumerate(table_text.splitlines(), start=1):
+        if not DISTRIBUTION_RE.match(line):
+            continue
+        managed = DIST_MANAGED_RE.search(line)
+        accept = DIST_ACCEPT_RE.search(line)
+        reject = DIST_REJECT_RE.search(line)
+        total = DIST_TOTAL_RE.search(line)
+        if not (accept and reject and total):
+            # No numbers to reconcile; `check_distributions` reports it.
+            captions.append((number, line.strip(), None, None))
+            continue
+        captions.append((
+            number,
+            line.strip(),
+            {
+                "ACCEPT": int(accept.group(1)),
+                "ACCEPT-MANAGED": int(managed.group(1)) if managed else 0,
+                "REJECT": int(reject.group(1)),
+            },
+            int(total.group(1)),
+        ))
+    return captions
+
+
 def parse_corpus(corpus_dir):
     """({num: entry}, problems) for every `<NN>-*.hy` fixture."""
     found = {}
@@ -99,6 +142,45 @@ def parse_corpus(corpus_dir):
             "rule": header.group(2),
         }
     return found, problems
+
+
+def census(corpus, upto):
+    """{verdict: n} over fixtures numbered 01..`upto`."""
+    counts = {"ACCEPT": 0, "ACCEPT-MANAGED": 0, "REJECT": 0}
+    for num, entry in corpus.items():
+        if int(num) <= upto and entry["verdict"] in counts:
+            counts[entry["verdict"]] += 1
+    return counts
+
+
+def check_distributions(table_text, corpus):
+    """Every caption that contradicts its own arithmetic or the corpus."""
+    problems = []
+    for number, caption, stated, total in parse_distributions(table_text):
+        if stated is None:
+            problems.append(
+                f"line {number}: the Distribution caption states no "
+                "`ACCEPT … ACCEPT-MANAGED … REJECT … — N programs` totals"
+            )
+            continue
+        parts = stated["ACCEPT"] + stated["ACCEPT-MANAGED"] + stated["REJECT"]
+        if parts != total:
+            problems.append(
+                f"line {number}: the Distribution caption does not add up — "
+                f"{stated['ACCEPT']} + {stated['ACCEPT-MANAGED']} + "
+                f"{stated['REJECT']} = {parts}, but it states {total} programs"
+            )
+        actual = census(corpus, total)
+        if stated != actual:
+            problems.append(
+                f"line {number}: the Distribution caption for programs 01-"
+                f"{total} disagrees with the corpus — it says ACCEPT "
+                f"{stated['ACCEPT']} · ACCEPT-MANAGED {stated['ACCEPT-MANAGED']} "
+                f"· REJECT {stated['REJECT']}, the fixtures say ACCEPT "
+                f"{actual['ACCEPT']} · ACCEPT-MANAGED {actual['ACCEPT-MANAGED']} "
+                f"· REJECT {actual['REJECT']}"
+            )
+    return problems
 
 
 def check(table_text, corpus_dir):
@@ -160,6 +242,8 @@ def check(table_text, corpus_dir):
                 f"{entry['file']} — no VERDICTS.md row names this fixture"
             )
 
+    problems.extend(check_distributions(table_text, corpus))
+
     return problems, rows, corpus
 
 
@@ -190,6 +274,12 @@ def main():
     if not corpus:
         print(f"VERDICT TABLE ERROR: no `<NN>-*.hy` fixtures in {args.corpus}; "
               "the guard cannot verify anything", file=sys.stderr)
+        return 2
+    if not parse_distributions(table_text):
+        print(f"VERDICT TABLE ERROR: no `**Distribution: … — N programs.**` "
+              f"caption parsed from {args.table}; the running-census check "
+              "cannot verify anything (if the captions were restructured, "
+              "teach DISTRIBUTION_RE the new shape)", file=sys.stderr)
         return 2
 
     if problems:

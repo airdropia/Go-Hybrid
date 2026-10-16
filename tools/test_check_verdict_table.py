@@ -146,6 +146,75 @@ class DriftDetectionTests(unittest.TestCase):
             problems)
 
 
+class DistributionCaptionTests(unittest.TestCase):
+    """The running `**Distribution: … — N programs.**` totals."""
+
+    ROWS = (
+        "| # | program | verdict | rule |\n"
+        "|---|---------|---------|------|\n"
+        "| 01 | 01-a | REJECT | A1c | x |\n"
+        "| 02 | 02-b | ACCEPT | — | y |\n"
+        "| 03 | 03-c | ACCEPT-MANAGED | — | z |\n"
+    )
+    FILES = {
+        "01-a.hy": "// EXPECTED-VERDICT: REJECT A1c",
+        "02-b.hy": "// EXPECTED-VERDICT: ACCEPT",
+        "03-c.hy": "// EXPECTED-VERDICT: ACCEPT-MANAGED",
+    }
+
+    def build(self, caption):
+        temporary = tempfile.TemporaryDirectory(prefix="hybrid-dist-")
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        corpus = write_corpus(root, self.FILES)
+        return corpus, self.ROWS + "\n" + caption + "\n"
+
+    def test_caption_matching_its_own_arithmetic_and_the_corpus_is_clean(self):
+        corpus, text = self.build(
+            "**Distribution: ACCEPT 1 · ACCEPT-MANAGED 1 · REJECT 1 — 3 programs.**")
+        problems, _, _ = guard.check(text, str(corpus))
+        self.assertEqual(problems, [])
+
+    def test_caption_that_does_not_add_up_is_reported(self):
+        corpus, text = self.build(
+            "**Distribution: ACCEPT 0 · ACCEPT-MANAGED 1 · REJECT 1 — 3 programs.**")
+        problems, _, _ = guard.check(text, str(corpus))
+        self.assertTrue(
+            any("does not add up" in p for p in problems), problems)
+
+    def test_caption_disagreeing_with_the_corpus_is_reported(self):
+        corpus, text = self.build(
+            "**Distribution: ACCEPT 2 · ACCEPT-MANAGED 1 · REJECT 0 — 3 programs.**")
+        problems, _, _ = guard.check(text, str(corpus))
+        self.assertTrue(
+            any("disagrees with the corpus" in p for p in problems), problems)
+
+    def test_caption_naming_more_programs_than_exist_is_reported(self):
+        corpus, text = self.build(
+            "**Distribution: ACCEPT 3 · ACCEPT-MANAGED 3 · REJECT 3 — 9 programs.**")
+        problems, _, _ = guard.check(text, str(corpus))
+        self.assertTrue(
+            any("disagrees with the corpus" in p for p in problems), problems)
+
+    def test_parse_distributions_reads_all_three_counts(self):
+        found = guard.parse_distributions(
+            "prose\n"
+            "**Distribution: ACCEPT 12 · ACCEPT-MANAGED 2 · REJECT 31 — 45 "
+            "programs.**\ntail\n")
+        self.assertEqual(len(found), 1, found)
+        line, _, stated, total = found[0]
+        self.assertEqual(line, 2)
+        self.assertEqual(stated, {"ACCEPT": 12, "ACCEPT-MANAGED": 2, "REJECT": 31})
+        self.assertEqual(total, 45)
+
+    def test_parse_distributions_flags_a_caption_without_numbers(self):
+        found = guard.parse_distributions("**Distribution: some prose.**\n")
+        self.assertEqual(len(found), 1, found)
+        _, _, stated, total = found[0]
+        self.assertIsNone(stated)
+        self.assertIsNone(total)
+
+
 class GuardMisuseTests(unittest.TestCase):
     def run_main(self, table=True, corpus=True, table_text=None):
         with tempfile.TemporaryDirectory(prefix="hybrid-vt-") as temporary:
@@ -158,7 +227,9 @@ class GuardMisuseTests(unittest.TestCase):
                 write_table(root, table_text or (
                     "| # | program | verdict | rule |\n"
                     "|---|---------|---------|------|\n"
-                    "| 01 | 01-x | REJECT | A1c | x |\n"))
+                    "| 01 | 01-x | REJECT | A1c | x |\n"
+                    "**Distribution: ACCEPT 0 · ACCEPT-MANAGED 0 · REJECT 1 — 1 "
+                    "programs.**\n"))
             original = guard.sys.argv
             guard.sys.argv = ["check_verdict_table.py",
                               "--table", str(table_path),
@@ -181,6 +252,13 @@ class GuardMisuseTests(unittest.TestCase):
     def test_table_with_no_rows_fails_closed(self):
         self.assertEqual(self.run_main(table_text="# just prose\n"), 2)
 
+    def test_table_with_no_distribution_caption_fails_closed(self):
+        no_caption = (
+            "| # | program | verdict | rule |\n"
+            "|---|---------|---------|------|\n"
+            "| 01 | 01-x | REJECT | A1c | x |\n")
+        self.assertEqual(self.run_main(table_text=no_caption), 2)
+
     def test_agreeing_inputs_exit_zero(self):
         self.assertEqual(self.run_main(), 0)
 
@@ -189,6 +267,8 @@ class GuardMisuseTests(unittest.TestCase):
             "| # | program | verdict | rule |\n"
             "|---|---------|---------|------|\n"
             "| 01 | 01-x | ACCEPT | — | x |\n"
+            "**Distribution: ACCEPT 1 · ACCEPT-MANAGED 0 · REJECT 0 — 1 "
+            "programs.**\n"
         )
         self.assertEqual(self.run_main(table_text=drift), 1)
 

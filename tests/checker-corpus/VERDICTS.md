@@ -92,14 +92,14 @@ renumbered).
 **Distribution: ACCEPT 10 · ACCEPT-MANAGED 2 · REJECT 26 — 38 programs.**
 
 
-**Distribution: ACCEPT 8 · ACCEPT-MANAGED 2 · REJECT 27 — 39 programs.**
+**Distribution: ACCEPT 10 · ACCEPT-MANAGED 2 · REJECT 27 — 39 programs.**
 | 40 | 40-wrapper-alias-freeze | REJECT | A1b | the WRAPPER tail of the same family: `alias := same(same(agg))` — and the sibling forms `same(agg)[0:2]`, `wrap{items: same(agg)}`, `box{items: agg}.items`, `take(box{items: agg})` — is still a live alias of `agg`, but `Expr::root_ident()` stops at a call or a literal base, so neither `record_alias` nor `record_may_share` recorded an edge: before the fix `hyb check` reported 0 diagnostics while `go run -race` reported `WARNING: DATA RACE` on the shared map write (issue #160; nested twin of 26/31, fixed by generalizing the alias collector) |
 | 41 | 41-wrapper-alias-own-move-control | ACCEPT | — | the FALSE-POSITIVE GUARD for 32: the same wrapper alias is held and read BEFORE the owned move, and neither `agg` nor `alias` is used after it — holding an alias is legal, only a use after the freeze violates O5.2, so a widened alias collector must keep this program accepted (accept-side control; pairs with 32 the way 23 pairs with 22) |
 
-**Distribution: ACCEPT 11 · ACCEPT-MANAGED 2 · REJECT 27 — 41 programs.**
+**Distribution: ACCEPT 11 · ACCEPT-MANAGED 2 · REJECT 28 — 41 programs.**
 
 
-**Distribution: ACCEPT 12 · ACCEPT-MANAGED 2 · REJECT 28 — 42 programs.**
+**Distribution: ACCEPT 11 · ACCEPT-MANAGED 2 · REJECT 29 — 42 programs.**
 
 ## Additive corpus registration — 2026-10-15: builtin `copy` ref-element alias (issue #178)
 
@@ -119,7 +119,7 @@ direction: a primitive-element slice copies by value and shares nothing.
 | 44 | 44-copy-primitive-element-control | ACCEPT | — | the FALSE-POSITIVE GUARD for 43: `copy(dst, src)` on `[]int` copies by value and shares no GC storage, so no may-share edge may be recorded |
 | 45 | 45-composite-literal-embeds-shared-map | REJECT | A1c | O4.6 deep sendability: a fresh `[]T{shared}` composite literal embedding a live shared map at a spawn is not laundered by the wrap (PR #176, maintainer-integrated as #45) |
 
-**Distribution: ACCEPT 13 · ACCEPT-MANAGED 2 · REJECT 34 — 49 programs.**
+**Distribution: ACCEPT 12 · ACCEPT-MANAGED 2 · REJECT 35 — 49 programs.**
 
 (19 and 20 were added by the lead during integration on 2026-10-12 — still
 BEFORE any checker existed; see the pre-registration statement. 21, 22, 23
@@ -465,6 +465,28 @@ artifact that is wrong, with the decision recorded.
   Guard: `tools/check_verdict_table.py` now fails closed if any row names a
   fixture numbered differently, if a number repeats, or if any fixture has no
   row. Author: @airdropia.
+
+- **2026-10-16 — RUNNING-TOTAL REPAIR, four of the six `Distribution` captions
+  (no verdict changed).** The bolded `**Distribution: … — N programs.**` captions
+  that close each integration batch are the file's own running census. Four of
+  the six disagreed with the corpus they describe, and two of the four did not
+  even add up: the `39 programs` caption read `ACCEPT 8 · ACCEPT-MANAGED 2 ·
+  REJECT 27` (8+2+27 = 37) and the `41 programs` caption read `ACCEPT 11 ·
+  ACCEPT-MANAGED 2 · REJECT 27` (11+2+27 = 40). The other two understated the
+  corpus outright: `42 programs` read `REJECT 28` against 29, and the closing
+  batch caption (then `45 programs`, now `49 programs`) read `ACCEPT 13 ·
+  REJECT 30` against `ACCEPT 12 · REJECT 31`. Each was wrong when written —
+  checked against the fixture set as of the commit that introduced it
+  (`2ad3c94`, `93aea3d`, and the registration that extended the tail) — so this
+  is transcription drift, not a later divergence. Fixed to the census the
+  fixtures actually carry: `39 programs` → `ACCEPT 10 · ACCEPT-MANAGED 2 ·
+  REJECT 27`, `41 programs` → `ACCEPT 11 · ACCEPT-MANAGED 2 · REJECT 28`, `42
+  programs` → `ACCEPT 11 · ACCEPT-MANAGED 2 · REJECT 29`, and the closing
+  caption → `ACCEPT 12 · ACCEPT-MANAGED 2 · REJECT 35 — 49 programs`. The `36
+  programs` and `38 programs` captions were already correct and are unchanged.
+  Guard: `check_distributions` in `tools/check_verdict_table.py` now requires
+  every caption to add up and to match the verdicts of the fixtures numbered
+  `01-N`. Author: @airdropia.
 
 ## Open questions (flagged for SPEC-LANGUAGE.md — NOT silently decided)
 
