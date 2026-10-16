@@ -488,6 +488,15 @@ artifact that is wrong, with the decision recorded.
   every caption to add up and to match the verdicts of the fixtures numbered
   `01-N`. Author: @airdropia.
 
+- **2026-10-16 — MISSING ROW, `50-move-closure-container-reject` (REJECT A1c).**
+  Not a verdict change: the fixture and its checker rule landed with the fix
+  for issue #225, but no row was added to the table here, so the normative
+  record named 49 programs while the corpus already held 50. The row is added
+  in a registration section of its own, with the closing sentence of the
+  buildability batch re-scoped to say 49 was the count at that batch rather
+  than the total. Verdict `REJECT A1c` is read from the fixture's own
+  pre-registered header. Author: @airdropia.
+
 ## Open questions (flagged for SPEC-LANGUAGE.md — NOT silently decided)
 
 These could not be settled from the ruling + spike-6 text; each corpus
@@ -619,12 +628,14 @@ hidden by changing an expected result.
 | 48 | 48-repeated-define-name-reject | REJECT | BUILDABLE | `HYB-E1002` | `x, x := 1, 2` is `x repeated on left side of :=` |
 | 49 | 49-blank-define-reject | REJECT | BUILDABLE | `HYB-E1002` | `_ := 5` declares no new variable — `no new variables on left side of :=` |
 
-With this four-case addition the registered corpus is **49 programs:
-ACCEPT 13 · ACCEPT-MANAGED 2 · REJECT 34** (harness recompute: 49/49
-verdict agreement; tripwire 2/46 = 4.3% verdict-level, 3/46 = 6.5%
+With this four-case addition the registered corpus became **49 programs:
+ACCEPT 12 · ACCEPT-MANAGED 2 · REJECT 35** (harness recompute: 49/49
+verdict agreement; tripwire 2/49 = 4.1% verdict-level, 3/49 = 6.1%
 as-written — not fired). None of the four files contains a `managed`
 block; the harness's historical as-written set {01, 03, 04} is unchanged,
-so the tripwire ratios only move with the larger total.
+so the tripwire ratios only move with the larger total. (Case 50 was
+registered next, below; this paragraph records the 49-program state as of
+the buildability batch.)
 
 The scope boundary is deliberate and recorded in the HYB-E1002 registry
 entry: an unused `rust/` import is NOT rejected (the emitter never writes
@@ -632,3 +643,31 @@ it as a Go import, so it cannot fail `go build`); unused `var` /
 composite-`const` locals, select-receive names and match bindings stay
 outside this registration (the same Go error family, tracked separately);
 unread `for ... in` bindings are handled at emission (issue #139).
+
+## Additive corpus registration — 2026-10-16: closure-container move (issue #225)
+
+Case 50 was derived from the O4 sendability text and O5 move/freeze rules
+before it was run against the checker. A slice, map, or struct that holds a
+closure carries captured state; moving such a container across a `task`
+boundary moves the captured storage too, so the move is a sendability act
+and must be rejected when the captured storage is shared. The checker
+accepted it with 0 diagnostics, so the program is a pre-registered REJECT
+(`A1c`) and the fix is the `hy-check` rule that now classifies closure-
+holding containers as non-sendable at a boundary.
+
+| # | program | verdict | rule | diagnostic | rationale |
+|---|---------|---------|------|------------|-----------|
+| 50 | 50-move-closure-container-reject | REJECT | A1c | `HYB-E3002` | a slice/map/struct holding a closure moves its captured storage; that storage is not safe-by-type at a `task` boundary, so the move must be rejected |
+
+With this case the registered corpus is **50 programs: ACCEPT 12 ·
+ACCEPT-MANAGED 2 · REJECT 36** (harness recompute: 50/50 verdict agreement;
+tripwire 2/50 = 4.0% verdict-level, 3/50 = 6.0% as-written — not fired).
+The file contains no `managed` block, and the harness's historical
+as-written set {01, 03, 04} is unchanged, so the tripwire ratios only move
+with the larger total.
+
+Registration note: the fixture landed in the fix commit for issue #225
+without a row here, so between that commit and this one the normative
+record described 49 programs while the corpus held 50. The row and this
+section restore the one-to-one naming that `tools/check_verdict_table.py`
+enforces.
