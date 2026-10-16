@@ -79,10 +79,10 @@ renumbered).
 | 29 | 29-struct-param-share-move-reject | REJECT | A1b | a shallow struct copy of a PARAMETER (`h2 := h`, struct carrying a map) is a may-share peer but not a reference alias, so `check_non_owned_move` (which consulted the binding's own origin and its alias-chain root only) accepted `task worker(move h2, done)` with 0 diagnostics while `go run` hit `fatal error: concurrent map writes` (issue #75; the map twin `m2 := m` was already rejected via alias+origin inheritance — identical storage-identity argument; array twin is corpus 30, pure-local accept pinned in hy-check/tests/param_share_move.rs) |
 | 30 | 30-array-param-share-move-reject | REJECT | A1b | ARRAY twin of 29: a shallow fixed-array copy of a parameter (`a2 := a`, `[2]map[string]int`) recurses to a map element shape so it may-shares, but a fixed array is not a reference alias and recorded no origin — same pre-fix OK(0)/`go run` fatal split, same fix (move-time scan of the may-share component for a non-owned origin) |
 | 31 | 31-generic-call-return-alias-freeze | REJECT | A1b | an alias that comes back through a GENERIC call (`alias := same(agg)` where `same[t any](m t) t` returns its argument) is still a live alias of `agg` — the result shape resolves through the type parameter to Unknown, which is not a reference alias, so 26's alias recording and the may-share recorder (which had no Call arm) both skipped it: before the fix `hyb check` reported 0 diagnostics while `go run` hit `fatal error: concurrent map writes` (issue #73; generic twin of 26 — the struct-result sibling `h2 := alias_holder(h1)` is pinned in the hy-check unit tests, one root cause) |
-| 32 | 32-a3-assign-map-slot-invalidated | REJECT | A3 | re-assignment `x = &m[k]` opens a map-slot loan window just like define `x := &m[k]` — before the fix only LocalDecl registered MapSlot loans, leaving assignments untracked so map inserts during active assignment loans passed with 0 diagnostics (issue #138) |
+| 42 | 42-a3-assign-map-slot-invalidated | REJECT | A3 | re-assignment `x = &m[k]` opens a map-slot loan window just like define `x := &m[k]` — before the fix only LocalDecl registered MapSlot loans, leaving assignments untracked so map inserts during active assignment loans passed with 0 diagnostics (issue #138) |
 
 
-| 32 | 32-closure-local-alias-move-reject | REJECT | A1b | a local rebind inside a closure (`alias := m`, where `m` is a captured outer map) is an alias of non-owned state, but `check_closure_boundaries` called `define_binding` without `record_alias` or `record_may_share`, wiping origin and alias links — before the fix `task worker(move alias, done)` was accepted with 0 diagnostics while `go run -race` produced concurrent map writes (issue #137) |
+| 39 | 39-closure-local-alias-move-reject | REJECT | A1b | a local rebind inside a closure (`alias := m`, where `m` is a captured outer map) is an alias of non-owned state, but `check_closure_boundaries` called `define_binding` without `record_alias` or `record_may_share`, wiping origin and alias links — before the fix `task worker(move alias, done)` was accepted with 0 diagnostics while `go run -race` produced concurrent map writes (issue #137) |
 
 
 **Distribution: ACCEPT 10 · ACCEPT-MANAGED 2 · REJECT 24 — 36 programs.**
@@ -446,6 +446,25 @@ artifact that is wrong, with the decision recorded.
   locals-first lookup keeps shadowing `let` copies writable). Verdict
   hand-derived from T22 first; the report's `go run -race` evidence is
   the reproduction, not the source of the verdict.
+
+- **2026-10-16 — ROW RENUMBER ONLY, two rows (no verdict changed).**
+  The table held three rows numbered `32` and no row for `39` or `42`.
+  Both rows below were authored as `32` on 2026-10-15 while `25–41` were
+  already taken, so maintainer integration renumbered the corpus FILES
+  (commit `f103fe6c`: "corpus 32→39 (25–38 were taken)"; commit `0fe95f04`:
+  "corpus 32→42 (25–41 were taken)") and updated the fixture headers — but
+  the rows added in those same merges kept the number `32`, and no row was
+  ever created for `39` or `42`. Nothing consumed the table, so the drift
+  was silent: `VERDICTS.md` still read as authoritative while a lookup of
+  program 39 returned nothing and a lookup of 32 returned three different
+  programs. Fix: renumber the two stale rows to match their files
+  (`32-closure-local-alias-move-reject` → `39`, `32-a3-assign-map-slot-invalidated`
+  → `42`); the surviving `32` row is the original
+  `32-select-send-shared-map`, which matches its file. Verdicts, rules, and
+  prose are untouched — this is a numbering repair, not a verdict change.
+  Guard: `tools/check_verdict_table.py` now fails closed if any row names a
+  fixture numbered differently, if a number repeats, or if any fixture has no
+  row. Author: @airdropia.
 
 ## Open questions (flagged for SPEC-LANGUAGE.md — NOT silently decided)
 
