@@ -19,8 +19,8 @@ Each `.hy` file carries one machine-readable line
 (`// EXPECTED-VERDICT: ACCEPT | ACCEPT-MANAGED | REJECT <rule-id>`);
 this file is the human-normative record.
 
-**Current registered corpus: 55 programs** — ACCEPT 14 · ACCEPT-MANAGED 2 ·
-REJECT 39. Recomputed from the fixtures' `// EXPECTED-VERDICT:` headers.
+**Current registered corpus: 60 programs** — ACCEPT 15 · ACCEPT-MANAGED 2 ·
+REJECT 42. Recomputed from the fixtures' `// EXPECTED-VERDICT:` headers.
 The `Distribution` captions further down are *dated snapshots*, each
 recording the census as it stood when that batch was integrated; this line
 is the current one, and `tools/check_verdict_table.py` fails closed if it
