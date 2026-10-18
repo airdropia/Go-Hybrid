@@ -360,7 +360,25 @@ impl<'a> Checker<'a> {
                 }),
             });
         }
+        // A channel is sendable by type REGARDLESS of its element type (the
+        // value crossing the site is the channel itself). That is correct for
+        // the channel, but it silently accepts a channel whose ELEMENT is a
+        // closure: every value such a channel hands across the boundary is a
+        // closure environment, which the binary never freezes. Ask the element
+        // shape before granting the by-type class (same A5 rule as moving a
+        // bare closure).
         if b.shape.is_sendable_by_type() {
+            if self.shape_holds_closure(&b.shape, &mut Vec::new()) {
+                return Outcome::Rejected(RejectInfo {
+                    value: name.to_string(),
+                    ty: self.binding_ty_str(b),
+                    notes: vec![format!(
+                        "{} is a {} whose element type is a closure; the channel crosses fine, but every closure it carries holds captured state that the move never freezes (A5 perimeter, same rule as moving a bare closure)",
+                        name,
+                        b.shape.noun()
+                    )],
+                });
+            }
             return Outcome::Ok; // classes 1/2
         }
         let ty = self.binding_ty_str(b);
