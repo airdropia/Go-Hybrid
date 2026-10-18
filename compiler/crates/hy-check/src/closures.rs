@@ -232,6 +232,7 @@ fn check_one_closure(
                 shape,
                 ty: Some(p.ty.clone()),
                 immutable: false,
+                is_let: false,
                 managed_taint: false,
                 moved: None,
                 slot_loan: false,
@@ -252,6 +253,7 @@ fn check_one_closure(
                         shape: shape.clone(),
                         ty: Some(r.ty.clone()),
                         immutable: false,
+                        is_let: false,
                         managed_taint: false,
                         moved: None,
                         non_owned_origin: None,
@@ -510,6 +512,7 @@ fn check_stmt_boundaries<'a>(ck: &mut Checker<'_>, st: &mut FnState, stmt: &'a S
             // DEEPLY immutable; `let` is a SHALLOW immutable binding, so it
             // must NOT take the class-4 sendability shortcut.
             let immutable = l.kind == LocalKind::Const;
+            let is_let = l.kind == LocalKind::Let;
             if l.values.is_empty() {
                 if let Some(t) = &l.ty {
                     ck.check_zero_value_local(l, t);
@@ -522,29 +525,33 @@ fn check_stmt_boundaries<'a>(ck: &mut Checker<'_>, st: &mut FnState, stmt: &'a S
                 let ty = l.ty.clone();
                 for name in &l.names {
                     mark_nested_overwritten(st, name, nested);
-                    ck.define_binding(st, name, shape.clone(), ty.clone(), immutable, managed);
+                    ck.define_binding(st, name, shape.clone(), ty.clone(), immutable, managed, is_let);
                 }
             } else if l.names.len() == l.values.len() {
+                let pre_st = st.clone();
+                let mut overwritten = Vec::new();
                 for (name, value) in l.names.iter().zip(l.values.iter()) {
+                    overwritten.push(name.clone());
                     let moved_non_owned = crate::model::move_operand_ident(value)
-                        .and_then(|src| ck.lookup_binding(st, &src))
+                        .and_then(|src| ck.lookup_binding(&pre_st, &src))
                         .and_then(|b| b.non_owned_origin.clone())
-                        .or_else(|| ck.moved_non_owned_origin_in_expr(st, value));
+                        .or_else(|| ck.moved_non_owned_origin_in_expr(&pre_st, value));
                     // ascription fills gaps (O4.9); inference keeps priority
                     // when it resolves (boundary handles stay precise)
-                    let inferred = ck.shape_of_expr(st, value);
+                    let inferred = ck.shape_of_expr(&pre_st, value);
                     let (shape, ty) = match (&l.ty, inferred) {
                         (Some(t), TypeShape::Unknown) => (ck.shape_of_type(t), Some(t.clone())),
                         (_, inferred) => (
                             inferred,
-                            ck.ty_of_expr(st, value).or_else(|| l.ty.clone()),
+                            ck.ty_of_expr(&pre_st, value).or_else(|| l.ty.clone()),
                         ),
                     };
+                    let is_fresh_copy = ck.call_returns_fresh_copy(&pre_st, value);
                     if crate::model::move_operand_ident(value).is_some()
                         || matches!(crate::model::unwrap_parens(value), Expr::Move { .. })
                     {
                         mark_nested_overwritten(st, name, nested);
-                        ck.define_binding(st, name, shape, ty, immutable, managed);
+                        ck.define_binding(st, name, shape, ty, immutable, managed, is_let);
                         if let Some(origin) = moved_non_owned {
                             if let Some(b) = st.env_lookup_mut(name) {
                                 b.non_owned_origin = Some(origin);
@@ -553,12 +560,12 @@ fn check_stmt_boundaries<'a>(ck: &mut Checker<'_>, st: &mut FnState, stmt: &'a S
                         ck.record_move_const_and_a3_loans(st, name, value, 0);
                         continue;
                     }
-                    let reads_self = ck.value_reads_storage_of(st, value, name);
+                    let reads_self = !is_fresh_copy && ck.value_reads_storage_of(&pre_st, value, name);
                     if !reads_self {
                         mark_nested_overwritten(st, name, nested);
                     }
                     let shadowed_origin = if ck.shape_may_share(&shape) && reads_self {
-                        ck.non_owned_origin_of(st, name).map(|(o, via_share)| {
+                        ck.non_owned_origin_of(&pre_st, name).map(|(o, via_share)| {
                             if via_share && !o.starts_with("a may-share peer of ") {
                                 format!("a may-share peer of {}", o)
                             } else {
@@ -569,12 +576,13 @@ fn check_stmt_boundaries<'a>(ck: &mut Checker<'_>, st: &mut FnState, stmt: &'a S
                         None
                     };
                     let prior_alias = if reads_self {
-                        st.aliases.get(name).cloned()
+                        pre_st.aliases.get(name).cloned()
                     } else {
                         None
                     };
                     let prior_children: Vec<String> = if reads_self {
-                        st.aliases
+                        pre_st
+                            .aliases
                             .iter()
                             .filter_map(|(k, v)| {
                                 if v == name && k != name {
@@ -588,7 +596,8 @@ fn check_stmt_boundaries<'a>(ck: &mut Checker<'_>, st: &mut FnState, stmt: &'a S
                         Vec::new()
                     };
                     let prior_shares: Vec<String> = if reads_self {
-                        st.may_share
+                        pre_st
+                            .may_share
                             .get(name)
                             .map(|s| s.iter().cloned().collect())
                             .unwrap_or_default()
@@ -596,20 +605,20 @@ fn check_stmt_boundaries<'a>(ck: &mut Checker<'_>, st: &mut FnState, stmt: &'a S
                         Vec::new()
                     };
                     let prior_shadow_links = if reads_self {
-                        st.shadow_links.get(name).cloned().unwrap_or_default()
+                        pre_st.shadow_links.get(name).cloned().unwrap_or_default()
                     } else {
                         std::collections::HashSet::new()
                     };
-                    let outer_depth = if st
+                    let outer_depth = if pre_st
                         .scopes
                         .last()
                         .is_some_and(|top| !top.contains_key(name))
                     {
-                        st.lookup_depth(name)
+                        pre_st.lookup_depth(name)
                     } else {
                         None
                     };
-                    ck.define_binding(st, name, shape, ty, immutable, managed);
+                    ck.define_binding(st, name, shape, ty, immutable, managed, is_let);
                     if let Some(origin) = &moved_non_owned {
                         if let Some(b) = st.env_lookup_mut(name) {
                             if b.non_owned_origin.is_none() {
@@ -647,9 +656,9 @@ fn check_stmt_boundaries<'a>(ck: &mut Checker<'_>, st: &mut FnState, stmt: &'a S
                     // issue #137: track may_share edges and aliases inside closures
                     // so local aliases of non-owned captured bindings inherit origin
                     // and cannot bypass O5.1 / O5.4 move restrictions.
-                    ck.record_may_share(st, name, value);
+                    ck.record_storage_from_snapshot(st, &pre_st, name, value, &overwritten, true, false);
                     ck.record_move_const_and_a3_loans(st, name, value, 0);
-                    ck.record_alias(st, name, value);
+
                     ck.record_closure_mutations(st, name, value);
                     if let Some(origin) = shadowed_origin.or(moved_non_owned) {
                         if let Some(b) = st.env_lookup_mut(name) {
@@ -739,6 +748,8 @@ fn check_stmt_boundaries<'a>(ck: &mut Checker<'_>, st: &mut FnState, stmt: &'a S
                         )
                     })
                     .collect();
+                let pre_st = st.clone();
+                let mut overwritten = Vec::new();
                 for (
                     name,
                     shape,
@@ -749,9 +760,10 @@ fn check_stmt_boundaries<'a>(ck: &mut Checker<'_>, st: &mut FnState, stmt: &'a S
                     prior_shares,
                 ) in resolved
                 {
+                    overwritten.push(name.clone());
                     let carries = ck.shape_may_share(&shape);
                     mark_nested_overwritten(st, &name, nested);
-                    ck.define_binding(st, &name, shape.clone(), ty, immutable, managed);
+                    ck.define_binding(st, &name, shape.clone(), ty, immutable, managed, is_let);
                     if reads_self {
                         if let Some(pa) = prior_alias {
                             st.aliases.insert(name.clone(), pa);
@@ -761,7 +773,7 @@ fn check_stmt_boundaries<'a>(ck: &mut Checker<'_>, st: &mut FnState, stmt: &'a S
                         }
                     }
                     if let Some(v) = val_opt {
-                        ck.record_multi_value_share_and_alias(st, &name, &shape, v);
+                        ck.record_storage_from_snapshot(st, &pre_st, &name, v, &overwritten, true, true);
                     }
                     if let Some(origin) = shadowed_origin {
                         if let Some(b) = st.env_lookup_mut(&name) {
@@ -903,7 +915,7 @@ fn check_stmt_boundaries<'a>(ck: &mut Checker<'_>, st: &mut FnState, stmt: &'a S
                                 TypeShape::Primitive
                             };
                             mark_nested_overwritten(st, n, nested);
-                            ck.define_binding(st, n, shape, None, false, managed);
+                            ck.define_binding(st, n, shape, None, false, managed, false);
                         }
                         sync_nested_moves(st, nested);
                     }
@@ -979,7 +991,7 @@ fn check_stmt_boundaries<'a>(ck: &mut Checker<'_>, st: &mut FnState, stmt: &'a S
                         let is_ref = shape.is_reference_alias();
                         let may_share = ck.shape_may_share(&shape);
                         mark_nested_overwritten(st, name, nested);
-                        ck.define_binding(st, name, shape, None, false, managed);
+                        ck.define_binding(st, name, shape, None, false, managed, false);
                         if !is_chan {
                             if may_share {
                                 ck.record_may_share(st, name, expr);
@@ -1017,7 +1029,7 @@ fn check_stmt_boundaries<'a>(ck: &mut Checker<'_>, st: &mut FnState, stmt: &'a S
                     collect_expr_direct_fnlits(lo, st, nested);
                     collect_expr_direct_fnlits(hi, st, nested);
                     mark_nested_overwritten(st, var, nested);
-                    ck.define_binding(st, var, TypeShape::Primitive, None, false, managed);
+                    ck.define_binding(st, var, TypeShape::Primitive, None, false, managed, false);
                     sync_nested_moves(st, nested);
                 }
                 While { cond } => {
@@ -1573,6 +1585,7 @@ fn check_deferred_uses(ck: &mut Checker<'_>, st: &FnState, body: &Block) {
                             shape,
                             ty: None,
                             immutable: false,
+                            is_let: false,
                             managed_taint: false,
                             moved: Some(mv),
                             non_owned_origin: None,
@@ -1718,6 +1731,13 @@ fn update_pre_defer_peers(
                     }
                 }
             }
+            if l.values.len() == 1 && l.names.len() > 1 {
+                for (i, j) in ck.callee_shared_return_pairs(st, &l.values[0]) {
+                    if let (Some(a), Some(b)) = (l.names.get(i), l.names.get(j)) {
+                        link_peer_nodes(peers, a, b);
+                    }
+                }
+            }
         }
         Stmt::Assign {
             targets,
@@ -1746,6 +1766,19 @@ fn update_pre_defer_peers(
                             .unwrap_or(true);
                         if may_share {
                             link_peer_nodes(peers, target, &r);
+                        }
+                    }
+                }
+            }
+            if values.len() == 1 && targets.len() > 1 {
+                for (i, j) in ck.callee_shared_return_pairs(st, &values[0]) {
+                    if let (Some(ta), Some(tb)) = (targets.get(i), targets.get(j)) {
+                        if let (
+                            hy_syntax::PlaceKind::Ident(a),
+                            hy_syntax::PlaceKind::Ident(b),
+                        ) = (&ta.kind, &tb.kind)
+                        {
+                            link_peer_nodes(peers, a, b);
                         }
                     }
                 }
