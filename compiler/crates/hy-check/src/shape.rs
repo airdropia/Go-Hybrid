@@ -188,42 +188,6 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// True when a value shape reaches a closure through containers, fields or
-    /// elements. Mirrors `shape_may_share` for the closure leaf.
-    pub(crate) fn shape_holds_closure(&self, shape: &TypeShape, seen: &mut Vec<String>) -> bool {
-        if seen.len() > 16 {
-            return true;
-        }
-        match shape {
-            TypeShape::Closure => true,
-            TypeShape::Slice(e)
-            | TypeShape::Array(e)
-            | TypeShape::Chan(e)
-            | TypeShape::Pointer(e) => self.shape_holds_closure(e, seen),
-            TypeShape::Map(k, v) => {
-                self.shape_holds_closure(k, seen) || self.shape_holds_closure(v, seen)
-            }
-            TypeShape::Struct(Some(name)) => {
-                if seen.iter().any(|s| s == name) {
-                    return false;
-                }
-                seen.push(name.clone());
-                let holds = self
-                    .structs
-                    .get(name)
-                    .map(|fields| {
-                        fields.iter().any(|(_, ty)| {
-                            self.shape_holds_closure(&self.shape_of_type(ty), seen)
-                        })
-                    })
-                    .unwrap_or(false);
-                seen.pop();
-                holds
-            }
-            _ => false,
-        }
-    }
-
     pub(crate) fn shape_carries_handle(&self, shape: &TypeShape) -> bool {
         self.shape_carries_handle_at(shape, 0)
     }
