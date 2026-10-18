@@ -658,6 +658,16 @@ pub(crate) fn own_fnlits<'a>(stmt: &'a Stmt, out: &mut Vec<&'a Expr>) {
 /// Collect every `FnLit` node reachable through `expr`'s own expression
 /// structure — the node itself is pushed, its body is NOT descended (the
 /// caller recurses into bodies through `own_fnlits` + flatten).
+/// Does `expr` contain a closure anywhere at its own level of nesting —
+/// including inside a composite literal or a call argument? `expr_fnlits`
+/// already answers this; this wrapper lets the boundary rules ask without
+/// building a vector.
+pub(crate) fn contains_closure(expr: &Expr) -> bool {
+    let mut found = Vec::new();
+    expr_fnlits(expr, &mut found);
+    !found.is_empty()
+}
+
 pub(crate) fn expr_fnlits<'e>(expr: &'e Expr, out: &mut Vec<&'e Expr>) {
     match expr {
         Expr::FnLit { .. } => out.push(expr),

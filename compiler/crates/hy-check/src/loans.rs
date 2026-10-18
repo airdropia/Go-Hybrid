@@ -2275,10 +2275,17 @@ impl<'a> Checker<'a> {
                     inner,
                     Expr::StructLit { .. } | Expr::MapLit { .. } | Expr::SliceLit { .. }
                 );
+                // A closure nested anywhere inside the value (a composite literal, a
+                // call argument) is as unsendable as a bare closure: its captures are
+                // not frozen by moving the carrier. The shape alone cannot see it —
+                // `chan T` and `map[K]V` drop T/V from the sendability reading — so ask
+                // the expression directly (#371-adjacent, same A5 rule as shape_holds_closure).
+                let holds_closure = crate::walk::contains_closure(inner);
                 let carries = self.shape_may_share(&result)
                     || matches!(result, TypeShape::Unknown)
                     || inner.root_ident().is_some()
-                    || is_literal;
+                    || is_literal
+                    || holds_closure;
                 if !carries {
                     return;
                 }
