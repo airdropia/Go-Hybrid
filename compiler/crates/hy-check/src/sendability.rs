@@ -160,6 +160,7 @@ impl<'a> Checker<'a> {
             TypeShape::Slice(e) | TypeShape::Array(e) | TypeShape::Pointer(e) => {
                 self.shape_holds_closure(e, seen)
             }
+            TypeShape::Chan(e) => self.shape_holds_closure(e, seen),
             TypeShape::Map(k, v) => {
                 self.shape_holds_closure(k, seen) || self.shape_holds_closure(v, seen)
             }
