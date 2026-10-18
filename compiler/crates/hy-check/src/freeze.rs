@@ -612,7 +612,13 @@ impl<'a> Checker<'a> {
                         .iter()
                         .any(|s| s.contains_key(lhs.as_str()));
                     if is_inner
-                        && self.call_returns_fresh_copy(rhs)
+                        && self.call_returns_fresh_copy(st, rhs)
+                        // #372: only treat the binding as loop-local when the callee is
+                        // the package function it claims to be. When a local binding
+                        // shadows the name, `self.fns` still has an entry for it and the
+                        // earlier version of this filter reported the copy as fresh, which
+                        // then cleared the moved state of the caller's argument root.
+                        && self.callee_not_shadowed(st, rhs)
                         && st.aliases.contains_key(lhs.as_str())
                     {
                         call_local_roots.insert(resolve_alias(st, lhs));
@@ -776,13 +782,33 @@ impl<'a> Checker<'a> {
     /// all construct a fresh value-element slice via `append([]T{}, ...)` (such
     /// as corpus 15's `chunk_of`), so the returned slice cannot share mutable
     /// backing storage with the caller's argument across loop iterations (#194).
-    fn call_returns_fresh_copy(&self, expr: &Expr) -> bool {
+    /// Does this call name a package function rather than a local binding?
+    /// A shadowed name makes any fresh-copy summary inapplicable: the call
+    /// reaches the local value, not the package function inspected here.
+    fn callee_not_shadowed(&self, st: &FnState, expr: &Expr) -> bool {
         let Expr::Call { callee, .. } = crate::model::unwrap_parens(expr) else {
             return false;
         };
         let Expr::Ident { name, .. } = crate::model::unwrap_parens(callee) else {
             return false;
         };
+        self.lookup_binding(st, name).is_none()
+    }
+
+    fn call_returns_fresh_copy(&self, st: &FnState, expr: &Expr) -> bool {
+        let Expr::Call { callee, .. } = crate::model::unwrap_parens(expr) else {
+            return false;
+        };
+        let Expr::Ident { name, .. } = crate::model::unwrap_parens(callee) else {
+            return false;
+        };
+        // #372: a local binding can shadow a package function of the same
+        // name. `self.fns` still holds the package entry, so the shape and
+        // body checks below would describe a function this call never
+        // reaches. Treat a shadowed callee as "not a fresh copy".
+        if self.lookup_binding(st, name).is_some() {
+            return false;
+        }
         let Some(fdecl) = self.fns.get(name.as_str()) else {
             return false;
         };
