@@ -148,6 +148,82 @@ impl<'a> Checker<'a> {
     /// `h := holder{doc: doc}`, `items := doc.array("items")?`) from boundary
     /// calls that return a fresh Layer-1 Go copy (`out := enc.finish()?`
     /// returning `[]byte`, O9).
+    /// True when a composite TYPE reaches a closure through its elements or
+    /// fields, using the resolved type rather than a value shape. Needed for
+    /// carriers the shape reading flattens: `chan T` is sendable by type
+    /// regardless of `T`, and a channel built through a helper has no literal
+    /// in the move expression for a syntactic check to see.
+    pub(crate) fn ty_holds_closure(&self, st: &FnState, expr: &Expr) -> bool {
+        match self.ty_of_expr(st, expr) {
+            Some(ty) => self.ty_holds_closure_at(&self.resolve_type_alias(&ty), 0),
+            None => false,
+        }
+    }
+
+    fn ty_holds_closure_at(&self, ty: &TypeExpr, depth: usize) -> bool {
+        if depth > Self::MAX_TYPE_RESOLUTION_DEPTH {
+            return true;
+        }
+        match ty {
+            TypeExpr::Fn { .. } => true,
+            TypeExpr::Slice { elem, .. } | TypeExpr::Array { elem, .. } => {
+                self.ty_holds_closure_at(elem, depth + 1)
+            }
+            TypeExpr::Chan { elem, .. } => self.ty_holds_closure_at(elem, depth + 1),
+            TypeExpr::Map { value, .. } => self.ty_holds_closure_at(value, depth + 1),
+            TypeExpr::Option { elem, .. } => self.ty_holds_closure_at(elem, depth + 1),
+            TypeExpr::Pointer { to, .. } => self.ty_holds_closure_at(to, depth + 1),
+            TypeExpr::Named { name, .. } => {
+                let base = Self::base_named_type_str(name);
+                self.structs
+                    .get(base)
+                    .map(|fields| {
+                        fields.iter().any(|(_, fty)| {
+                            self.ty_holds_closure_at(&self.resolve_type_alias(fty), depth + 1)
+                        })
+                    })
+                    .unwrap_or(false)
+            }
+            _ => false,
+        }
+    }
+
+    /// True when a value shape reaches a closure through containers, fields or
+    /// elements. Mirrors `shape_may_share` for the closure leaf.
+    pub(crate) fn shape_holds_closure(&self, shape: &TypeShape, seen: &mut Vec<String>) -> bool {
+        if seen.len() > 16 {
+            return true;
+        }
+        match shape {
+            TypeShape::Closure => true,
+            TypeShape::Slice(e)
+            | TypeShape::Array(e)
+            | TypeShape::Chan(e)
+            | TypeShape::Pointer(e) => self.shape_holds_closure(e, seen),
+            TypeShape::Map(k, v) => {
+                self.shape_holds_closure(k, seen) || self.shape_holds_closure(v, seen)
+            }
+            TypeShape::Struct(Some(name)) => {
+                if seen.iter().any(|s| s == name) {
+                    return false;
+                }
+                seen.push(name.clone());
+                let holds = self
+                    .structs
+                    .get(name)
+                    .map(|fields| {
+                        fields.iter().any(|(_, ty)| {
+                            self.shape_holds_closure(&self.shape_of_type(ty), seen)
+                        })
+                    })
+                    .unwrap_or(false);
+                seen.pop();
+                holds
+            }
+            _ => false,
+        }
+    }
+
     pub(crate) fn shape_carries_handle(&self, shape: &TypeShape) -> bool {
         self.shape_carries_handle_at(shape, 0)
     }

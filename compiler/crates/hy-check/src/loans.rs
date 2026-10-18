@@ -2275,12 +2275,16 @@ impl<'a> Checker<'a> {
                     inner,
                     Expr::StructLit { .. } | Expr::MapLit { .. } | Expr::SliceLit { .. }
                 );
-                // A closure nested anywhere inside the value (a composite literal, a
-                // call argument) is as unsendable as a bare closure: its captures are
-                // not frozen by moving the carrier. The shape alone cannot see it —
-                // `chan T` and `map[K]V` drop T/V from the sendability reading — so ask
-                // the expression directly (#371-adjacent, same A5 rule as shape_holds_closure).
-                let holds_closure = crate::walk::contains_closure(inner);
+                // A type that nests a closure (a composite literal, or `chan T` /
+                // `map[K]V` whose element type IS a closure) carries unsendable
+                // state: `chan` is sendable-by-type regardless of its element, and a
+                // map literal keeps element shapes only for non-closures, so the shape
+                // alone can read clean while the moved value is not. Ask the RESOLVED
+                // type as well as the expression (a channel built through a helper
+                // has no literal in the move expression).
+                let holds_closure = crate::walk::contains_closure(inner)
+                    || self.ty_holds_closure(st, inner)
+                    || self.shape_holds_closure(&result, &mut Vec::new());
                 let carries = self.shape_may_share(&result)
                     || matches!(result, TypeShape::Unknown)
                     || inner.root_ident().is_some()
