@@ -2147,6 +2147,40 @@ impl<'a> Collector<'a> {
                         }
                         return;
                     }
+                    // Call result arity doesn't match enclosing signature arity.
+                    // The only exception is the error-tail zero-fill pattern:
+                    //   return f() where f returns (T) and enclosing declares (T, error)
+                    // The emitter fills in nil for the error result.
+                    if !(self.fn_results_error_tail && !res.is_empty() && res.len() + 1 == want.len()) {
+                        let nv = res.len();
+                        let nw = want.len();
+                        let msg = match (nw, nv) {
+                            (0, _) => format!(
+                                "`return f()` where the call returns {nv} value{} but the function declares no results — Go refuses `too many return values` (HYB-E1002)",
+                                if nv == 1 { "" } else { "s" }
+                            ),
+                            (_, 0) => format!(
+                                "`return f()` where the call returns no values but the function declares {nw} result{} — Go refuses `not enough return values` (HYB-E1002)",
+                                if nw == 1 { "" } else { "s" }
+                            ),
+                            _ => format!(
+                                "`return f()` where the call returns {nv} value{} but the signature declares {nw} result{} — Go refuses `not enough return values` / `too many return values` (HYB-E1002)",
+                                if nv == 1 { "" } else { "s" },
+                                if nw == 1 { "" } else { "s" }
+                            ),
+                        };
+                        self.emit_e1002(
+                            span,
+                            msg,
+                            "a return call must return exactly the results the signature declares; use an explicit assignment when a different arity is intended",
+                        );
+                        return;
+                    }
+                    // error-tail zero-fill: check the non-error results positionally
+                    for (r, w) in res.iter().zip(want.iter()) {
+                        self.report_return_conflict(r, w, values[0].span());
+                    }
+                    return;
                 }
             }
         }
