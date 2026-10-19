@@ -9,7 +9,7 @@
 //! Literal-only scope mirrors the landed #149 / #148 const-arith checks:
 //! variable operands stay a run-time concern, matching Go.
 
-use crate::model::{unwrap_parens, Checker, OpKind};
+use crate::model::{unwrap_parens, Checker};
 use hy_diag::{Diagnostic, Span};
 use hy_syntax::{Expr, ForKind, LitKind, Place, PlaceKind, SelectArmKind, Stmt, UnOp};
 
@@ -301,37 +301,31 @@ impl<'a> Checker<'a> {
                 // #720: copy's destination must be a slice, its source a slice
                 // or string. Fail open on Unknown — only reject when we can
                 // prove the shape is wrong.
-                let dst_k = self.kind_of_expr(dst);
-                let src_k = self.kind_of_expr(src);
-                let dst_bad = matches!(
-                    dst_k,
-                    OpKind::Int
-                        | OpKind::Float
-                        | OpKind::Bool
-                        | OpKind::Struct(_)
-                        | OpKind::Pointer(_)
-                        | OpKind::Chan(_)
-                        | OpKind::Fn(..)
-                        | OpKind::Void
-                );
-                let src_bad = matches!(
-                    src_k,
-                    OpKind::Int
-                        | OpKind::Float
-                        | OpKind::Bool
-                        | OpKind::Struct(_)
-                        | OpKind::Pointer(_)
-                        | OpKind::Chan(_)
-                        | OpKind::Fn(..)
-                        | OpKind::Void
-                        | OpKind::Map(_, _)
-                );
-                if dst_bad || src_bad {
+                let dst_is_scalar_lit = is_value_literal(dst)
+                    || is_numeric_or_bool_or_char_literal(dst)
+                    || matches!(
+                        unwrap_parens(dst),
+                        Expr::Lit { kind: LitKind::Nil, .. }
+                    );
+                let src_is_number_bool_char = is_numeric_or_bool_or_char_literal(src)
+                    || matches!(
+                        unwrap_parens(src),
+                        Expr::Lit { kind: LitKind::Nil, .. }
+                    );
+                if dst_is_scalar_lit {
                     self.emit_builtin(
                         span,
                         format!(
-                            "`copy(dst, src)` requires a destination slice and a source slice or string, got `{}` and `{}` (HYB-E2005)",
-                            dst.render(),
+                            "`copy(dst, src)` requires a destination slice, got `{}` (HYB-E2005)",
+                            dst.render()
+                        ),
+                    );
+                }
+                if src_is_number_bool_char {
+                    self.emit_builtin(
+                        span,
+                        format!(
+                            "`copy(dst, src)` requires a source slice or string, got `{}` (HYB-E2005)",
                             src.render()
                         ),
                     );
@@ -349,28 +343,15 @@ impl<'a> Checker<'a> {
                     return;
                 }
                 let arg = &args[0].value;
-                let k = self.kind_of_expr(arg);
                 // #720: clear only accepts a slice or map. Fail open on
-                // Unknown.
-                let bad = matches!(
-                    k,
-                    OpKind::Int
-                        | OpKind::Float
-                        | OpKind::Bool
-                        | OpKind::Struct(_)
-                        | OpKind::Pointer(_)
-                        | OpKind::Chan(_)
-                        | OpKind::Fn(..)
-                        | OpKind::Void
-                        | OpKind::Interface
-                );
-                if bad {
+                // Unknown — only reject when we can prove the shape is wrong
+                // via literal checks.
+                if is_value_literal(arg) {
                     self.emit_builtin(
                         span,
                         format!(
-                            "`clear` requires a slice or map argument, got `{}` (type `{}`) (HYB-E2005)",
-                            arg.render(),
-                            k.label()
+                            "`clear` requires a slice or map argument, got `{}` (HYB-E2005)",
+                            arg.render()
                         ),
                     );
                 }
