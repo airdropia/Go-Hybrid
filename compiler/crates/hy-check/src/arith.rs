@@ -240,6 +240,29 @@ impl<'a> Checker<'a> {
                 for a in args {
                     self.check_expr_const_zero_divisor(st, &a.value);
                 }
+                // #1016: void function call used as a value — e.g. in a
+                // composite literal field/item/key/value or unary operand.
+                // Go rejects `(no value) used as value` at build time.
+                if let Expr::Ident { name, .. } = crate::model::unwrap_parens(callee) {
+                    if let Some(f) = self.fns.get(name) {
+                        if f.results.is_empty() {
+                            self.diags.push(
+                                Diagnostic::error(
+                                    "HYB-E1002",
+                                    self.path.clone(),
+                                    callee.span(),
+                                    format!(
+                                        "void function call `{}` produces no value; cannot be used as a value (HYB-E1002)",
+                                        name
+                                    ),
+                                )
+                                .with_notes(vec![
+                                    "a void function call returns no value and cannot be used in a value position".to_string(),
+                                ]),
+                            );
+                        }
+                    }
+                }
             }
             Expr::StructLit { fields, .. } => {
                 for f in fields {
