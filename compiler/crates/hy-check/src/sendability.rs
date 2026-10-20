@@ -363,6 +363,23 @@ impl<'a> Checker<'a> {
         if b.shape.is_sendable_by_type() {
             return Outcome::Ok; // classes 1/2
         }
+        // #723: the literal spelling of a value composite is already accepted
+        // through the deep-sendability path (classify_composite walks the
+        // parts). The BINDING spelling of the same value was rejected by the
+        // blanket is_sendable_by_type (Struct/Array land on false), so
+        // task w(pair{a: 1, b: 2}) passed while the same value bound to a
+        // variable first did not. Grant the same answer here: a composite
+        // whose shape carries NO reference storage is a value copy in Go and
+        // is safe to share, exactly like the literal. Composites that carry
+        // reference storage never reach this arm (shape_may_share is true and
+        // the rejection below keeps its O4 wording).
+        if matches!(
+            b.shape,
+            crate::model::TypeShape::Struct(_) | crate::model::TypeShape::Array(_)
+        ) && !self.shape_may_share(&b.shape)
+        {
+            return Outcome::Ok;
+        }
         let ty = self.binding_ty_str(b);
         if b.shape.is_handle() {
             return Outcome::Rejected(RejectInfo {
