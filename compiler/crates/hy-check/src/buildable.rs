@@ -2965,7 +2965,8 @@ impl<'a> Collector<'a> {
                 let mismatch = lk != OpKind::Unknown
                     && rk != OpKind::Unknown
                     && (lk.is_numeric() != rk.is_numeric() || lk != rk)
-                    && (!self.is_numeric_literal(lhs) || !self.is_numeric_literal(rhs));
+                    && !self.is_numeric_literal(lhs)
+                    && !self.is_numeric_literal(rhs);
                 if !l_ok || !r_ok || mismatch {
                     self.emit_e1002(
                         span,
@@ -2987,7 +2988,8 @@ impl<'a> Collector<'a> {
                 let mismatch = lk != OpKind::Unknown
                     && rk != OpKind::Unknown
                     && (lk.is_numeric() != rk.is_numeric() || lk != rk)
-                    && (!self.is_numeric_literal(lhs) || !self.is_numeric_literal(rhs));
+                    && !self.is_numeric_literal(lhs)
+                    && !self.is_numeric_literal(rhs);
                 if !l_ok || !r_ok || mismatch {
                     self.emit_e1002(
                         span,
@@ -3013,7 +3015,8 @@ impl<'a> Collector<'a> {
                     || (lk != OpKind::Unknown
                         && rk != OpKind::Unknown
                         && lk != rk
-                        && (!self.is_numeric_literal(lhs) || !self.is_numeric_literal(rhs)))
+                        && !self.is_numeric_literal(lhs)
+                        && !self.is_numeric_literal(rhs))
                 {
                     self.emit_e1002(
                         span,
