@@ -813,6 +813,11 @@ impl<'a> Collector<'a> {
             Stmt::Send { chan, value, .. } => {
                 self.expr(chan);
                 self.expr(value);
+                // #887: `ch <- v` must agree with the channel's element kind.
+                // `ch <- true` / `ch <- 1.5` on a `chan int` passed the
+                // checker (TypeShape::Primitive conflates the numeric and bool
+                // kinds) and emitted Go that go build rejects.
+                self.check_send_elem_kind(chan, value);
             }
             Stmt::If {
                 init,
@@ -1872,6 +1877,27 @@ impl<'a> Collector<'a> {
             ),
             Expr::Ident { name, .. } => self.kind_of_named(name, 0),
             _ => OpKind::Unknown,
+        }
+    }
+
+    /// #887: a channel send whose value kind conflicts with the channel's
+    /// element kind cannot build. Unknown/Interface/Void sides stay fail-open
+    /// (same doctrine as kinds_conflict, which owns the comparison).
+    fn check_send_elem_kind(&mut self, chan: &Expr, value: &Expr) {
+        let chan_kind = self.kind_of_expr(chan);
+        let OpKind::Chan(elem) = chan_kind else {
+            return;
+        };
+        let vkind = self.kind_of_expr(value);
+        if Self::kinds_conflict(&elem, &vkind) {
+            let msg = format!(
+                "channel carries {} values, but this send has kind {}",
+                elem.label(),
+                vkind.label()
+            );
+            let note = "a channel send must agree with the channel's element type; \
+                        go build rejects the emitted code otherwise";
+            self.emit_e1002(value.span(), msg, note);
         }
     }
 
