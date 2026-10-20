@@ -527,7 +527,22 @@ fn check_fn(ck: &mut Checker<'_>, f: &FnDecl) {
                 ForKind::Range { var, .. } => {
                     ck.define_binding(&mut st, var, TypeShape::Primitive, None, false, managed);
                 }
-                ForKind::While { .. } | ForKind::Infinite => {}
+                ForKind::While { cond } => {
+                    let cond_shape = ck.shape_of_expr(&st, cond);
+                    if cond_shape != TypeShape::Unknown && cond_shape != TypeShape::Bool {
+                        ck.diags.push(
+                            Diagnostic::error(
+                                "HYB-E1002",
+                                ck.path.clone(),
+                                cond.span(),
+                                "while loop condition must be boolean (HYB-E1002)",
+                            )
+                            .with_notes(vec![
+                                "Go requires for loop conditions to be boolean".to_string(),
+                            ]),
+                        );
+                    }
+                }
             },
 
             // select arms: `ch <- v` is a send check-site; `v, ok := <-ch`
