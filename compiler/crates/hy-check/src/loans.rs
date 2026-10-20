@@ -1416,6 +1416,31 @@ impl<'a> Checker<'a> {
         idx: usize,
         managed: bool,
     ) {
+        // #903: declaration arity mismatch — `a, b := 1, 2, 3` or `x, y := 1`
+        if l.names.len() != l.values.len() {
+            let (nn, nv) = (l.names.len(), l.values.len());
+            let span = l.names.first().map_or_else(
+                || l.values.first().map_or(l.span, |v| v.span()),
+                |n| n.span(),
+            );
+            self.diags.push(
+                Diagnostic::error(
+                    "HYB-E1002",
+                    self.path.clone(),
+                    span,
+                    format!(
+                        "declaration binds {nn} name{} but the initializer has {nv} value{} — Go refuses `not enough values in declaration` / `too many values in declaration` (HYB-E1002)",
+                        if nn == 1 { "" } else { "s" },
+                        if nv == 1 { "" } else { "s" }
+                    ),
+                )
+                .with_notes(vec![format!(
+                    "a declaration must bind exactly one name per initializer value; got {nn} name(s) and {nv} value(s)",
+                )]),
+            );
+            return;
+        }
+
         // A3 loan creation: `svc := &e.services[existing]` (including parallel defines)
         if l.names.len() == l.values.len() {
             for (name, val) in l.names.iter().zip(l.values.iter()) {
@@ -1609,6 +1634,33 @@ impl<'a> Checker<'a> {
             let pre_st = st.clone();
             let mut overwritten = Vec::new();
             for (name, value) in l.names.iter().zip(l.values.iter()) {
+                // #903: declaration initializer type mismatch — `var x int = "hello"`
+                if let Some(t) = &l.ty {
+                    let want = self.shape_of_type(t);
+                    let inferred = self.shape_of_expr(st, value);
+                    if want != TypeShape::Unknown
+                        && inferred != TypeShape::Unknown
+                        && want != inferred
+                    {
+                        self.diags.push(
+                            Diagnostic::error(
+                                "HYB-E1002",
+                                self.path.clone(),
+                                value.span(),
+                                format!(
+                                    "cannot use a value of type `{}` as type `{}` in declaration (HYB-E1002)",
+                                    inferred.render(),
+                                    want.render()
+                                ),
+                            )
+                            .with_notes(vec![format!(
+                                "the initializer expression type `{}` does not match the declared type `{}`",
+                                inferred.render(),
+                                want.render()
+                            )]),
+                        );
+                    }
+                }
                 overwritten.push(name.clone());
                 // Issue #148: constant initializer outside a fixed-width
                 // declared type → HYB-E6002 (Go would refuse to build).
@@ -5247,6 +5299,63 @@ impl<'a> Checker<'a> {
         _span: Span,
         idx: usize,
     ) {
+        // #903: assignment arity mismatch — `a, b := 1, 2, 3` or `x, y = 10`
+        if targets.len() != values.len() {
+            let (nt, nv) = (targets.len(), values.len());
+            let span = targets.first().map_or_else(
+                || values.first().map_or(_span, |v| v.span()),
+                |t| t.span(),
+            );
+            self.diags.push(
+                Diagnostic::error(
+                    "HYB-E1002",
+                    self.path.clone(),
+                    span,
+                    format!(
+                        "assignment supplies {nv} value{} but {nt} target{} — Go refuses `not enough values in assignment` / `too many values in assignment` (HYB-E1002)",
+                        if nv == 1 { "" } else { "s" },
+                        if nt == 1 { "" } else { "s" }
+                    ),
+                )
+                .with_notes(vec![format!(
+                    "an assignment must assign exactly one value per target; got {nt} target(s) and {nv} value(s)",
+                )]),
+            );
+            return;
+        }
+
+        // #903: assignment target type mismatch — `x int = "hello"` in assignment position
+        for (t, v) in targets.iter().zip(values.iter()) {
+            if let PlaceKind::Ident(name) = &t.kind {
+                if let Some(binding) = self.lookup_binding(st, name) {
+                    let want = binding.shape;
+                    let got = self.shape_of_expr(st, v);
+                    if want != TypeShape::Unknown
+                        && got != TypeShape::Unknown
+                        && want != got
+                    {
+                        self.diags.push(
+                            Diagnostic::error(
+                                "HYB-E1002",
+                                self.path.clone(),
+                                v.span(),
+                                format!(
+                                    "cannot use a value of type `{}` as type `{}` in assignment (HYB-E1002)",
+                                    got.render(),
+                                    want.render()
+                                ),
+                            )
+                            .with_notes(vec![format!(
+                                "the assigned value type `{}` does not match the target type `{}`",
+                                got.render(),
+                                want.render()
+                            )]),
+                        );
+                    }
+                }
+            }
+        }
+
         // A3 loan creation on assignment: `x = &m[k]`
         if op == AssignOp::Assign && targets.len() == values.len() {
             for (t, v) in targets.iter().zip(values.iter()) {
