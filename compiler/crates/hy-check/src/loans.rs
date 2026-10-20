@@ -1973,14 +1973,14 @@ impl<'a> Checker<'a> {
                 }
             }
             Expr::Call { callee, args, .. } => {
-                if self.expr_has_borrow_shape(st, e) {
-                    if let Expr::Field { base, .. } = unwrap_parens(callee) {
-                        self.collect_expr_addr_of_roots(st, base, out);
-                    }
-                    for a in args {
-                        self.collect_expr_addr_of_roots(st, &a.value, out);
-                    }
-                }
+                // #920: auto-addressed `*T` arguments and pointer-receiver
+                // methods are borrows even when the argument carries no
+                // explicit `&`. `collect_borrowed_roots` already models
+                // that (call_param_is_pointer / call_receiver_is_pointer +
+                // binding_can_be_borrowed); this collector only walked literal
+                // AddrOf nodes, so `return id_ptr(b)` escaped LOAN-ESCAPE
+                // with 0 diagnostics. Delegate instead of duplicating the rule.
+                self.collect_borrowed_roots(st, e, out);
             }
             Expr::StructLit { fields, .. } => {
                 for f in fields {
