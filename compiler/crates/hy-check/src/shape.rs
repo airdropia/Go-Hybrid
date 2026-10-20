@@ -413,8 +413,30 @@ impl<'a> Checker<'a> {
                         }
                     }
                 }
-                // Issue #411/H2: user-defined methods (`c.keys()`).
+                // Issue #884 (part 2): the T20 prelude's option[T] methods.
+                // `option[v]` is a payload struct, so `.unwrap()` /
+                // `.or(x)` return the payload and `.is_some()` /
+                // `.is_none()` return a bool. Without this arm every option
+                // method call shaped as Unknown, which severed may_share,
+                // alias and const-root tracking on the unwrapped value and let
+                // O5.2/O5.4/T22 be bypassed through `o.unwrap()`.
                 let recv = self.shape_of_expr(st, base);
+                match name.as_str() {
+                    "unwrap" if args.is_empty() => return recv,
+                    "or" if args.len() == 1 => {
+                        let arg = self.shape_of_expr(st, &args[0].value);
+                        if matches!(arg, TypeShape::Unknown) {
+                            return recv;
+                        }
+                        return arg;
+                    }
+                    "is_some" | "is_none" if args.is_empty() => {
+                        if !matches!(recv, TypeShape::Unknown) {
+                            return TypeShape::Primitive;
+                        }
+                    }
+                    _ => {}
+                }
                 if name == "pop" && args.is_empty() {
                     if let TypeShape::Slice(elem) = &recv {
                         return (**elem).clone();
