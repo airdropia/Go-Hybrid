@@ -25,7 +25,7 @@ fn codes(r: &hy_check::CheckResult) -> Vec<String> {
 fn returning_an_auto_addressed_pointer_argument_is_rejected() {
     let src = r#"
 struct box {
-    v: int
+    v int
 }
 
 fn id_ptr(p *box) *box {
@@ -53,7 +53,7 @@ fn main() {
 fn a_pointer_receiver_call_that_returns_the_receiver_is_rejected() {
     let src = r#"
 struct box {
-    v: int
+    v int
 }
 
 fn (b *box) self_ptr() *box {
