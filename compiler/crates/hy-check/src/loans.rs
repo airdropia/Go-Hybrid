@@ -305,6 +305,44 @@ impl<'a> Checker<'a> {
                     // A7 borrow-by-default: a handle passed to a Hybrid
                     // function is lent for the call only
                     self.lend_handle_args(st, cr, idx, None);
+                    // #1029: call argument type mismatch — check argument
+                    // types against parameter types. Go rejects mismatched
+                    // argument types at compile time; Hybrid must too
+                    // (GUARANTEES Row 13).
+                    if let Some(f) = self.fns.get(&name) {
+                        for (i, arg) in cr.args.iter().enumerate() {
+                            if i < f.params.len() {
+                                let param = &f.params[i];
+                                let want = self.shape_of_type(&param.ty);
+                                let got = self.shape_of_expr(st, &arg.value);
+                                if want != TypeShape::Unknown
+                                    && got != TypeShape::Unknown
+                                    && want != got
+                                {
+                                    self.diags.push(
+                                        Diagnostic::error(
+                                            "HYB-E1002",
+                                            self.path.clone(),
+                                            arg.value.span(),
+                                            format!(
+                                                "cannot use a value of type `{}` as type `{}` in argument {} to `{}` (HYB-E1002)",
+                                                got.render(),
+                                                want.render(),
+                                                i + 1,
+                                                name
+                                            ),
+                                        )
+                                        .with_notes(vec![format!(
+                                            "argument {} type `{}` does not match parameter type `{}`",
+                                            i + 1,
+                                            got.render(),
+                                            want.render()
+                                        )]),
+                                    );
+                                }
+                            }
+                        }
+                    }
                 } else {
                     let resolved_callee = crate::freeze::resolve_alias(st, &name);
                     if st.closure_mutates.contains_key(&name)
