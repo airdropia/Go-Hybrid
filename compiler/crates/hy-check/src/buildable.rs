@@ -1889,7 +1889,7 @@ impl<'a> Collector<'a> {
             return;
         };
         let vkind = self.kind_of_expr(value);
-        if Self::kinds_conflict(&elem, &vkind) {
+        if kinds_conflict(&elem, &vkind) {
             let msg = format!(
                 "channel carries {} values, but this send has kind {}",
                 elem.label(),
