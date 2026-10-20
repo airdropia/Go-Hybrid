@@ -892,8 +892,17 @@ fn place_is_index_free(p: &Place) -> bool {
 /// path of an `&path[key]`-shaped value, if it is one.
 pub(crate) fn addr_of_index_base_path(value: &Expr) -> Option<String> {
     let operand = as_addr_of(value)?;
+    // #831: the emitter lowers a field-projected slot loan too
+    // (`&m["a"].sub`, `&s[0].sub`) as a copy-out + deferred store-back, so
+    // the borrow must be recorded against the INDEXED base path, not lost.
+    // Only the field case is added here: a plain `&h.sub` has no indexed
+    // base, so it still yields None.
     match operand {
         Expr::Index { base, .. } => expr_path(base),
+        Expr::Field { base, .. } => match crate::model::unwrap_parens(base) {
+            Expr::Index { base: indexed, .. } => expr_path(indexed),
+            _ => None,
+        },
         _ => None,
     }
 }
