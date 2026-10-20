@@ -7449,6 +7449,36 @@ impl<'a> Checker<'a> {
                     self.emit_nil_type_error(shape, v.span(), "a declared result of this function");
                 }
             }
+            // Return type mismatch — check return value types against
+            // declared result types. Go rejects mismatched return types
+            // at compile time; Hybrid must too (GUARANTEES Row 13).
+            for (i, (v, want)) in values.iter().zip(st.result_shapes.iter()).enumerate() {
+                let got = self.shape_of_expr(st, v);
+                if want != TypeShape::Unknown
+                    && got != TypeShape::Unknown
+                    && want != got
+                {
+                    self.diags.push(
+                        Diagnostic::error(
+                            "HYB-E1002",
+                            self.path.clone(),
+                            v.span(),
+                            format!(
+                                "cannot use a value of type `{}` as type `{}` in return {} (HYB-E1002)",
+                                got.render(),
+                                want.render(),
+                                i + 1
+                            ),
+                        )
+                        .with_notes(vec![format!(
+                            "return value {} type `{}` does not match declared result type `{}`",
+                            i + 1,
+                            got.render(),
+                            want.render()
+                        )]),
+                    );
+                }
+            }
         }
         for v in values {
             // N1 for composite literals: a returned literal with nested
