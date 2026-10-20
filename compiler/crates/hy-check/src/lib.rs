@@ -751,6 +751,20 @@ fn check_fn(ck: &mut Checker<'_>, f: &FnDecl) {
                         cond,
                         format!("the loop condition `{}`", cond.render()),
                     );
+                    let cond_shape = ck.shape_of_expr(&st, cond);
+                    if cond_shape != TypeShape::Unknown && cond_shape != TypeShape::Bool {
+                        ck.diags.push(
+                            Diagnostic::error(
+                                "HYB-E1002",
+                                ck.path.clone(),
+                                cond.span(),
+                                "while loop condition must be boolean (HYB-E1002)",
+                            )
+                            .with_notes(vec![
+                                "Go requires for loop conditions to be boolean".to_string(),
+                            ]),
+                        );
+                    }
                 }
                 ForKind::Infinite => {}
             },
