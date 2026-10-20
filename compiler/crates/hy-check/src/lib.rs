@@ -753,7 +753,49 @@ fn check_fn(ck: &mut Checker<'_>, f: &FnDecl) {
                     );
                 }
                 ForKind::Infinite => {}
-            },
+            }
+
+            // Match statements: check arm pattern literal type compatibility
+            // against subject type. Void calls / 0-value builtins in subject
+            // are already caught by check_expr_const_zero_divisor.
+            Stmt::Match { subject, arms, .. } => {
+                let subj_shape = ck.shape_of_expr(&st, subject);
+                for arm in arms {
+                    if let hy_syntax::MatchPattern::Lit(lit_kind) = &arm.pattern {
+                        if subj_shape != TypeShape::Unknown {
+                            let lit_shape = match lit_kind {
+                                hy_syntax::LitKind::Int(_) => TypeShape::Int,
+                                hy_syntax::LitKind::Float(_) => TypeShape::Float,
+                                hy_syntax::LitKind::Bool(_) => TypeShape::Bool,
+                                hy_syntax::LitKind::Str(_) | hy_syntax::LitKind::RawStr(_) => {
+                                    TypeShape::Str
+                                }
+                                hy_syntax::LitKind::Char(_) => TypeShape::Int,
+                                hy_syntax::LitKind::Nil => TypeShape::Unknown,
+                            };
+                            if subj_shape != lit_shape {
+                                ck.diags.push(
+                                    Diagnostic::error(
+                                        "HYB-E1002",
+                                        ck.path.clone(),
+                                        subject.span(),
+                                        format!(
+                                            "mismatched types in match: pattern of type `{}` cannot match subject of type `{}` (HYB-E1002)",
+                                            lit_shape.render(),
+                                            subj_shape.render()
+                                        ),
+                                    )
+                                    .with_notes(vec![format!(
+                                        "match pattern literal type `{}` does not match subject type `{}`",
+                                        lit_shape.render(),
+                                        subj_shape.render()
+                                    )]),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
 
             // select arms: `ch <- v` is a send check-site; `v, ok := <-ch`
             // defines its names inside that arm's own scope via
