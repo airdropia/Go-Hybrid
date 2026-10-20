@@ -24,7 +24,10 @@ use crate::model::{
 use crate::shape::receiver_type_name;
 use crate::walk::{self, CallRef};
 use hy_diag::{Diagnostic, Span};
-use hy_syntax::{AssignOp, Block, Expr, FnDecl, LocalDecl, LocalKind, Place, PlaceKind, Stmt};
+use hy_syntax::{
+    AssignOp, Block, Expr, FnDecl, LocalDecl, LocalKind, LitKind, Place, PlaceKind, Stmt,
+    TypeExpr,
+};
 use std::collections::HashSet;
 
 /// Read-only call targets that can never mutate a map argument — the A3
@@ -1347,6 +1350,71 @@ impl<'a> Checker<'a> {
                 if let Some(path) = walk::place_path(t) {
                     self.emit_a3_if_live(st, &path, t.span, idx, "insert");
                 }
+            }
+        }
+
+        // B7 (issue #999): constant index out of bounds on array assignment target.
+        // `var a [2]int; a[300] = 1` must be rejected — the array-literal form
+        // (#910) is already checked, but the var-declared array assignment target
+        // fell through. Only fires when both index and array length are constant
+        // literals that can be compared at check time.
+        for (i, t) in targets.iter().enumerate() {
+            if is_const_write[i] {
+                continue;
+            }
+            let PlaceKind::Index { base, index } = &t.kind else {
+                continue;
+            };
+            let Expr::Lit {
+                kind: LitKind::Int(idx_str),
+                ..
+            } = index
+            else {
+                continue;
+            };
+            let Ok(idx_val): Result<i64, _> = idx_str.parse() else {
+                continue;
+            };
+            if idx_val < 0 {
+                continue;
+            }
+            let base_root = base.root();
+            let Some(binding) = self.lookup_binding(st, base_root) else {
+                continue;
+            };
+            let Some(TypeExpr::Array {
+                len: Some(len_expr),
+                ..
+            }) = &binding.ty
+            else {
+                continue;
+            };
+            let Expr::Lit {
+                kind: LitKind::Int(len_str),
+                ..
+            } = len_expr.as_ref()
+            else {
+                continue;
+            };
+            let Ok(len_val): Result<i64, _> = len_str.parse() else {
+                continue;
+            };
+            if idx_val >= len_val {
+                self.diags.push(
+                    Diagnostic::error(
+                        "HYB-E1002",
+                        self.path.clone(),
+                        t.span,
+                        format!(
+                            "index {} is out of bounds for array of size {} (HYB-E1002)",
+                            idx_val, len_val
+                        ),
+                    )
+                    .with_notes(vec![format!(
+                        "the array `{}` has {} elements; valid indices are 0..{}",
+                        base_root, len_val, len_val
+                    )]),
+                );
             }
         }
 
