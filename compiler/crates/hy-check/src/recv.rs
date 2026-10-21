@@ -21,7 +21,7 @@
 //! `SelectArmKind::Recv` channel expressions.
 
 use crate::model::{Checker, FnState, TypeShape};
-use hy_diag::{Diagnostic, Span};
+use hy_diag::{Diagnostic, Pos, Span};
 use hy_syntax::{Expr, InterpPart, PlaceKind, SelectArmKind, Stmt};
 
 impl<'a> Checker<'a> {
@@ -82,6 +82,7 @@ impl<'a> Checker<'a> {
                                 immutable,
                                 false,
                                 is_let,
+                                l.span,
                             );
                         }
                     } else if l.names.len() == l.values.len() {
@@ -106,7 +107,7 @@ impl<'a> Checker<'a> {
                             })
                             .collect();
                         for (name, shape, ty) in bindings {
-                            self.define_binding(&mut tmp, name, shape, ty, immutable, false, is_let);
+                            self.define_binding(&mut tmp, name, shape, ty, immutable, false, is_let, ty.span);
                         }
                     } else if l.values.len() == 1 && l.names.len() > 1 {
                         let shapes = self.multi_value_shapes(st, &l.values[0], l.names.len());
@@ -122,6 +123,7 @@ impl<'a> Checker<'a> {
                                 immutable,
                                 false,
                                 is_let,
+                                l.span,
                             );
                         }
                     }
