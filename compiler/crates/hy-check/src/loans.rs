@@ -23,7 +23,7 @@ use crate::model::{
 };
 use crate::shape::receiver_type_name;
 use crate::walk::{self, CallRef};
-use hy_diag::{Diagnostic, Span};
+use hy_diag::{Diagnostic, Pos, Span};
 use hy_syntax::{AssignOp, Block, Expr, FnDecl, LocalDecl, LocalKind, Place, PlaceKind, Stmt};
 use std::collections::{HashMap, HashSet};
 
@@ -1476,7 +1476,7 @@ impl<'a> Checker<'a> {
                     .unwrap_or(TypeShape::Unknown);
             let ty = l.ty.clone();
             for name in &l.names {
-                self.define_binding(st, name, shape.clone(), ty.clone(), immutable, managed, is_let);
+                self.define_binding(st, name, shape.clone(), ty.clone(), immutable, managed, is_let, l.span);
             }
             return;
         }
@@ -1572,7 +1572,7 @@ impl<'a> Checker<'a> {
                 overwritten.push(info.name.clone());
                 let is_view = matches!(info.shape, TypeShape::BorrowHandle(_));
                 let carries = self.shape_may_share(&info.shape);
-                self.define_binding(st, &info.name, info.shape.clone(), info.ty, immutable, managed, is_let);
+                self.define_binding(st, &info.name, info.shape.clone(), info.ty, immutable, managed, is_let, l.span);
                 if is_view {
                     self.extend_call_loans_to_view(st, &l.values[0], &info.name, idx);
                 }
@@ -1707,7 +1707,7 @@ impl<'a> Checker<'a> {
                 if move_operand_ident(value).is_some()
                     || matches!(unwrap_parens(value), Expr::Move { .. })
                 {
-                    self.define_binding(st, name, shape, ty, immutable, managed, is_let);
+                    self.define_binding(st, name, shape, ty, immutable, managed, is_let, value.span());
                     if let Some(origin) = moved_non_owned {
                         if let Some(b) = st.env_lookup_mut(name) {
                             b.non_owned_origin = Some(origin);
@@ -1783,7 +1783,7 @@ impl<'a> Checker<'a> {
                 } else {
                     None
                 };
-                self.define_binding(st, name, shape, ty, immutable, managed, is_let);
+                self.define_binding(st, name, shape, ty, immutable, managed, is_let, value.span());
                 if let Some(origin) = &moved_non_owned {
                     if let Some(b) = st.env_lookup_mut(name) {
                         if b.non_owned_origin.is_none() {
@@ -4573,7 +4573,7 @@ impl<'a> Checker<'a> {
                 .as_ref()
                 .map(|t| self.shape_of_type(t))
                 .unwrap_or(TypeShape::Unknown);
-            self.define_binding(&mut cst, p, shape.clone(), pty.clone(), false, false, false);
+            self.define_binding(&mut cst, p, shape.clone(), pty.clone(), false, false, false, Span::new(Pos::new(0, 0), Pos::new(0, 0)));
             if self.shape_may_share(&shape)
                 || matches!(shape, TypeShape::Unknown | TypeShape::Array(_))
             {
@@ -4590,7 +4590,7 @@ impl<'a> Checker<'a> {
                 .as_ref()
                 .map(|t| self.shape_of_type(t))
                 .unwrap_or(TypeShape::Unknown);
-            self.define_binding(&mut cst, nr, shape, rty.clone(), false, false, false);
+            self.define_binding(&mut cst, nr, shape, rty.clone(), false, false, false, Span::new(Pos::new(0, 0), Pos::new(0, 0)));
             origins.remove(nr);
             shadowed.insert(nr.clone());
         }
@@ -4686,6 +4686,7 @@ impl<'a> Checker<'a> {
                                 false,
                                 false,
                                 is_let,
+                                l.span,
                             );
                             if self.shape_may_share(&shape)
                                 || matches!(shape, TypeShape::Unknown | TypeShape::Array(_))
@@ -4712,7 +4713,7 @@ impl<'a> Checker<'a> {
                             &mut base_o,
                         );
                         for ((name, shape), ty) in l.names.iter().zip(shapes).zip(tys) {
-                            self.define_binding(&mut cst, name, shape.clone(), ty, false, false, is_let);
+                            self.define_binding(&mut cst, name, shape.clone(), ty, false, false, is_let, l.span);
                             if self.shape_may_share(&shape)
                                 || matches!(shape, TypeShape::Unknown | TypeShape::Array(_))
                             {
@@ -4751,7 +4752,7 @@ impl<'a> Checker<'a> {
                             })
                             .collect();
                         for (name, (shape, ty, mut s)) in l.names.iter().zip(rhs_info) {
-                            self.define_binding(&mut cst, name, shape.clone(), ty, false, false, is_let);
+                            self.define_binding(&mut cst, name, shape.clone(), ty, false, false, is_let, l.span);
                             if self.shape_may_share(&shape)
                                 || matches!(shape, TypeShape::Unknown | TypeShape::Array(_))
                             {
@@ -5086,8 +5087,24 @@ impl<'a> Checker<'a> {
         immutable: bool,
         managed: bool,
         is_let: bool,
+        span: Span,
     ) {
         if name == "_" {
+            return;
+        }
+        // #990: reject same-scope redeclaration — `var x = 1; var x = 2` or
+        // `x := 1; x := 2` in the same block must fail with HYB-E1002.
+        let already_here = st.scopes.last().is_some_and(|top| top.contains_key(name))
+            || (st.scopes.is_empty() && st.env.contains_key(name));
+        if already_here {
+            self.diags.push(
+                Diagnostic::error(
+                    "HYB-E1002",
+                    self.path.clone(),
+                    span,
+                    format!("`{}` redeclared in this block (HYB-E1002)", name),
+                ),
+            );
             return;
         }
         let shadows_outer = st
@@ -5200,6 +5217,7 @@ impl<'a> Checker<'a> {
             self_shadows_const,
             managed || pre_tainted,
             false,
+            Span::new(Pos::new(0, 0), Pos::new(0, 0)),
         );
 
         self.record_may_share(st, name, subject);
@@ -5945,7 +5963,7 @@ impl<'a> Checker<'a> {
                                 } else {
                                     TypeShape::Primitive
                                 };
-                                self.define_binding(&mut cst, n, shape, None, false, false, false);
+                                self.define_binding(&mut cst, n, shape, None, false, false, false, Span::new(Pos::new(0, 0), Pos::new(0, 0)));
                             }
                         }
                         walk::ScopeEvent::MatchBind { name, subject } => {
@@ -5977,6 +5995,7 @@ impl<'a> Checker<'a> {
                                         true,
                                         false,
                                         false,
+                                        Span::new(Pos::new(0, 0), Pos::new(0, 0)),
                                     );
                                 } else {
                                     cst.aliases.insert(name.to_string(), cr.clone());
@@ -5991,6 +6010,7 @@ impl<'a> Checker<'a> {
                                     false,
                                     false,
                                     false,
+                                    Span::new(Pos::new(0, 0), Pos::new(0, 0)),
                                 );
                                 cst.aliases.remove(*name);
                                 cst.share_clear(name);
@@ -6180,7 +6200,7 @@ impl<'a> Checker<'a> {
                         for (name, shape) in vars.iter().zip(shapes) {
                             let is_ref = shape.is_reference_alias() || shape.is_handle();
                             let carries = self.shape_may_share(&shape);
-                            self.define_binding(&mut cst, name, shape, None, false, false, false);
+                            self.define_binding(&mut cst, name, shape, None, false, false, false, Span::new(Pos::new(0, 0), Pos::new(0, 0)));
                             if !is_chan {
                                 let mut roots = Vec::new();
                                 collect_ref_roots(expr, &mut roots);
@@ -6199,7 +6219,7 @@ impl<'a> Checker<'a> {
                         }
                     }
                     hy_syntax::ForKind::Range { var, .. } => {
-                        self.define_binding(&mut cst, var, TypeShape::Primitive, None, false, false, false);
+                        self.define_binding(&mut cst, var, TypeShape::Primitive, None, false, false, false, Span::new(Pos::new(0, 0), Pos::new(0, 0)));
                     }
                     _ => {}
                 },
@@ -6254,13 +6274,13 @@ impl<'a> Checker<'a> {
         st.scope_push();
         for p in params {
             let shape = self.shape_of_type(&p.ty);
-            self.define_binding(st, &p.name, shape, Some(p.ty.clone()), false, false, false);
+            self.define_binding(st, &p.name, shape, Some(p.ty.clone()), false, false, false, p.ty.span);
         }
         for r in results {
             if let Some(name) = &r.name {
                 if name != "_" {
                     let shape = self.shape_of_type(&r.ty);
-                    self.define_binding(st, name, shape, Some(r.ty.clone()), false, false, false);
+                    self.define_binding(st, name, shape, Some(r.ty.clone()), false, false, false, r.ty.span);
                 }
             }
         }
@@ -6307,7 +6327,7 @@ impl<'a> Checker<'a> {
                 .collect();
             for (name, shape, ty, is_imm) in resolved {
                 overwritten.push(name.clone());
-                self.define_binding(st, &name, shape.clone(), ty, is_imm, false, is_let);
+                self.define_binding(st, &name, shape.clone(), ty, is_imm, false, is_let, l.span);
                 if move_operand_ident(&l.values[0]).is_none() {
                     self.record_storage_from_snapshot(st, &pre_st, &name, &l.values[0], &overwritten, true, true);
                 }
@@ -6339,7 +6359,7 @@ impl<'a> Checker<'a> {
                         },
                     )
                     .is_some();
-            self.define_binding(st, name, shape, ty, immutable || shadowed_const, false, is_let);
+            self.define_binding(st, name, shape, ty, immutable || shadowed_const, false, is_let, value.span());
             if move_operand_ident(value).is_none() && !is_fresh_copy {
                 self.record_storage_from_snapshot(st, &pre_st, name, value, &overwritten, true, false);
             }

@@ -23,7 +23,7 @@ use crate::const_overflow::{
     parse_int_lit, ConstFold, ConstInt,
 };
 use crate::model::{as_addr_of, unwrap_parens, Checker, FnState, TypeShape};
-use hy_diag::{Diagnostic, Span};
+use hy_diag::{Diagnostic, Pos, Span};
 use hy_syntax::{
     AssignOp, BinOp, CallArg, Expr, FnDecl, ForKind, InterpPart, LitKind, Place, PlaceKind,
     SelectArmKind, Stmt, TypeExpr, UnOp,
@@ -212,6 +212,7 @@ impl<'a> Checker<'a> {
                                 false,
                                 false,
                                 false,
+                                Span::new(Pos::new(0, 0), Pos::new(0, 0)),
                             );
                         }
                     }
@@ -220,7 +221,7 @@ impl<'a> Checker<'a> {
                         if deep {
                             let shapes = self.iterate_var_shapes(st, expr, vars.len());
                             for (name, shape) in vars.iter().zip(shapes) {
-                                self.define_binding(st, name, shape, None, false, false, false);
+                                self.define_binding(st, name, shape, None, false, false, false, Span::new(Pos::new(0, 0), Pos::new(0, 0)));
                             }
                         }
                     }
@@ -327,7 +328,7 @@ impl<'a> Checker<'a> {
                                     } else {
                                         TypeShape::Primitive
                                     };
-                                    self.define_binding(st, n, shape, None, false, false, false);
+                                    self.define_binding(st, n, shape, None, false, false, false, Span::new(Pos::new(0, 0), Pos::new(0, 0)));
                                 }
                             }
                         }
@@ -355,7 +356,7 @@ impl<'a> Checker<'a> {
                 .unwrap_or(TypeShape::Unknown);
             let ty = l.ty.clone();
             for name in &l.names {
-                self.define_binding(st, name, shape.clone(), ty.clone(), immutable, false, is_let);
+                self.define_binding(st, name, shape.clone(), ty.clone(), immutable, false, is_let, l.span);
             }
         } else if l.names.len() == l.values.len() {
             for (name, val) in l.names.iter().zip(l.values.iter()) {
@@ -365,7 +366,7 @@ impl<'a> Checker<'a> {
                     (_, s) => s,
                 };
                 let ty = l.ty.clone().or_else(|| self.ty_of_expr(st, val));
-                self.define_binding(st, name, shape, ty, immutable, false, is_let);
+                self.define_binding(st, name, shape, ty, immutable, false, is_let, val.span());
             }
         }
     }
@@ -558,7 +559,7 @@ impl<'a> Checker<'a> {
                 cst.scope_push();
                 for p in params {
                     let shape = self.shape_of_type(&p.ty);
-                    self.define_binding(&mut cst, &p.name, shape, Some(p.ty.clone()), false, false, false);
+                    self.define_binding(&mut cst, &p.name, shape, Some(p.ty.clone()), false, false, false, p.ty.span);
                 }
                 for r in results {
                     if let Some(name) = &r.name {
@@ -572,6 +573,7 @@ impl<'a> Checker<'a> {
                                 false,
                                 false,
                                 false,
+                                r.ty.span,
                             );
                         }
                     }
