@@ -7838,6 +7838,44 @@ impl<'a> Checker<'a> {
                 }
             }
         }
+        // #1119: reject a struct field and method with the same name — Go
+        // rejects "field and method with the same name" at build time
+        // (HYB-E1002, Row 13 BUILDABLE).
+        for (sname, fields) in &decls {
+            let collisions: Vec<(String, String, Span)> = fields
+                .iter()
+                .filter_map(|(fname, _)| {
+                    self.method_decls
+                        .iter()
+                        .find(|((base, mname), _)| base == sname && mname == fname)
+                        .map(|((_, mname), method_fn)| {
+                            let span = method_fn
+                                .receiver
+                                .as_ref()
+                                .map(|r| r.ty.span())
+                                .unwrap_or_else(|| Span::new(Pos::new(0, 0), Pos::new(0, 0)));
+                            (fname.clone(), mname.clone(), span)
+                        })
+                })
+                .collect();
+            for (fname, mname, span) in collisions {
+                self.diags.push(
+                    Diagnostic::error(
+                        "HYB-E1002",
+                        self.path.clone(),
+                        span,
+                        format!(
+                            "method `{}` on struct `{}` has the same name as field `{}.{}` — Go rejects a struct with a field and method of the same name (HYB-E1002)",
+                            mname, sname, sname, fname
+                        ),
+                    )
+                    .with_notes(vec![format!(
+                        "field `{}` and method `{}` on struct `{}` collide — rename one of them",
+                        fname, mname, sname
+                    )]),
+                );
+            }
+        }
     }
 
     /// `var`/`let` statements are Locals; file-level const inference:
