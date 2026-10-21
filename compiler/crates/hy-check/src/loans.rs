@@ -5079,7 +5079,7 @@ impl<'a> Checker<'a> {
     }
 
     pub(crate) fn define_binding(
-        &self,
+        &mut self,
         st: &mut FnState,
         name: &str,
         shape: TypeShape,
