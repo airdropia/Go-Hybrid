@@ -27,6 +27,7 @@
 //!     (A5, QUESTIONS.md Q1/OQ1: pre-registered ACCEPT, contested openly).
 
 use crate::model::{Binding, Checker, FnState, TypeShape};
+use hy_diag::{Pos, Span};
 use hy_syntax::ForKind::*;
 use hy_syntax::{Block, Expr, LocalKind, SelectArmKind, Stmt};
 
@@ -525,7 +526,7 @@ fn check_stmt_boundaries<'a>(ck: &mut Checker<'_>, st: &mut FnState, stmt: &'a S
                 let ty = l.ty.clone();
                 for name in &l.names {
                     mark_nested_overwritten(st, name, nested);
-                    ck.define_binding(st, name, shape.clone(), ty.clone(), immutable, managed, is_let);
+                    ck.define_binding(st, name, shape.clone(), ty.clone(), immutable, managed, is_let, l.span);
                 }
             } else if l.names.len() == l.values.len() {
                 let pre_st = st.clone();
@@ -551,7 +552,7 @@ fn check_stmt_boundaries<'a>(ck: &mut Checker<'_>, st: &mut FnState, stmt: &'a S
                         || matches!(crate::model::unwrap_parens(value), Expr::Move { .. })
                     {
                         mark_nested_overwritten(st, name, nested);
-                        ck.define_binding(st, name, shape, ty, immutable, managed, is_let);
+                        ck.define_binding(st, name, shape, ty, immutable, managed, is_let, value.span());
                         if let Some(origin) = moved_non_owned {
                             if let Some(b) = st.env_lookup_mut(name) {
                                 b.non_owned_origin = Some(origin);
@@ -618,7 +619,7 @@ fn check_stmt_boundaries<'a>(ck: &mut Checker<'_>, st: &mut FnState, stmt: &'a S
                     } else {
                         None
                     };
-                    ck.define_binding(st, name, shape, ty, immutable, managed, is_let);
+                    ck.define_binding(st, name, shape, ty, immutable, managed, is_let, value.span());
                     if let Some(origin) = &moved_non_owned {
                         if let Some(b) = st.env_lookup_mut(name) {
                             if b.non_owned_origin.is_none() {
@@ -763,7 +764,7 @@ fn check_stmt_boundaries<'a>(ck: &mut Checker<'_>, st: &mut FnState, stmt: &'a S
                     overwritten.push(name.clone());
                     let carries = ck.shape_may_share(&shape);
                     mark_nested_overwritten(st, &name, nested);
-                    ck.define_binding(st, &name, shape.clone(), ty, immutable, managed, is_let);
+                    ck.define_binding(st, &name, shape.clone(), ty, immutable, managed, is_let, l.span);
                     if reads_self {
                         if let Some(pa) = prior_alias {
                             st.aliases.insert(name.clone(), pa);
@@ -915,7 +916,7 @@ fn check_stmt_boundaries<'a>(ck: &mut Checker<'_>, st: &mut FnState, stmt: &'a S
                                 TypeShape::Primitive
                             };
                             mark_nested_overwritten(st, n, nested);
-                            ck.define_binding(st, n, shape, None, false, managed, false);
+                            ck.define_binding(st, n, shape, None, false, managed, false, Span::new(Pos::new(0, 0), Pos::new(0, 0)));
                         }
                         sync_nested_moves(st, nested);
                     }
@@ -991,7 +992,7 @@ fn check_stmt_boundaries<'a>(ck: &mut Checker<'_>, st: &mut FnState, stmt: &'a S
                         let is_ref = shape.is_reference_alias();
                         let may_share = ck.shape_may_share(&shape);
                         mark_nested_overwritten(st, name, nested);
-                        ck.define_binding(st, name, shape, None, false, managed, false);
+                        ck.define_binding(st, name, shape, None, false, managed, false, Span::new(Pos::new(0, 0), Pos::new(0, 0)));
                         if !is_chan {
                             if may_share {
                                 ck.record_may_share(st, name, expr);
@@ -1029,7 +1030,7 @@ fn check_stmt_boundaries<'a>(ck: &mut Checker<'_>, st: &mut FnState, stmt: &'a S
                     collect_expr_direct_fnlits(lo, st, nested);
                     collect_expr_direct_fnlits(hi, st, nested);
                     mark_nested_overwritten(st, var, nested);
-                    ck.define_binding(st, var, TypeShape::Primitive, None, false, managed, false);
+                    ck.define_binding(st, var, TypeShape::Primitive, None, false, managed, false, Span::new(Pos::new(0, 0), Pos::new(0, 0)));
                     sync_nested_moves(st, nested);
                 }
                 While { cond } => {
