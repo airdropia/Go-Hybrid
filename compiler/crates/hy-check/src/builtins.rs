@@ -440,6 +440,18 @@ impl<'a> Checker<'a> {
                     );
                 }
             }
+            "append" => {
+                if args.len() < 2 {
+                    self.emit_builtin(
+                        span,
+                        format!(
+                            "`append` requires at least 2 arguments (slice, element...), found {} (HYB-E2005)",
+                            args.len()
+                        ),
+                    );
+                    return;
+                }
+            }
             _ => {}
         }
     }
