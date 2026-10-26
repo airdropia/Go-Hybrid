@@ -37,6 +37,7 @@
 //! every rejection teaches (O17 — fix-its come from the hy-diag registry);
 //! diagnostics are returned in source order.
 
+mod buildable;
 mod arith;
 mod const_overflow;
 mod closures;
