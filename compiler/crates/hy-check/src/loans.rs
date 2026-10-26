@@ -573,6 +573,13 @@ impl<'a> Checker<'a> {
                     }
                 }
                 cr.args.iter().any(&arg_root_is_param)
+                // method receiver: `param.bump()` — the receiver IS the param,
+                // and the method may mutate it. Fail closed.
+                if let Expr::Ident { name: rname, .. } = &**base {
+                    if rname == param {
+                        return true;
+                    }
+                }
             }
             _ => cr.args.iter().any(&arg_root_is_param),
         }
@@ -692,6 +699,13 @@ impl<'a> Checker<'a> {
                         if let Expr::Ident { name: pkg, .. } = &**base {
                             if A3_PURE_PKGS.contains(&pkg.as_str()) {
                                 continue;
+                            }
+                        }
+                        // method receiver: `captured.bump()` — receiver may
+                        // be mutated by the call. Record it as a root.
+                        if let Expr::Ident { name: rname, .. } = &**base {
+                            if !bound.contains(rname) {
+                                out.insert(rname.clone());
                             }
                         }
                         for a in cr.args {
