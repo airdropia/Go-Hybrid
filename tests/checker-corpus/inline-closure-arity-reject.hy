@@ -1,6 +1,6 @@
 // ============================================================================
 // inline-closure-arity-reject — Checker corpus (bounty track: "grow the
-// adversarial corpus").
+// adversarial corpus).
 //
 // PURPOSE: an inline closure call that passes the wrong number of arguments
 // or wrong argument types. The emitted Go call cannot build, so accepting it

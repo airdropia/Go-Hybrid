@@ -1595,7 +1595,7 @@ impl<'a> Collector<'a> {
                 self.check_named_type_instantiation(arg, span);
             }
         }
-        if head == "set" || head == "option" || head == "map" {
+        if head == "map" {
             return;
         }
         let Some(tparams) = self.ck.struct_type_params.get(head) else {
