@@ -172,6 +172,7 @@ fn build_tables(ck: &mut Checker<'_>) {
                         .map(|f| (f.name.clone(), f.ty.clone()))
                         .collect(),
                 );
+                ck.struct_type_params.insert(s.name.clone(), s.type_params.clone());
             }
             Decl::Fn(f) => {
                 // Only top-level functions belong in `ck.fns` (methods have a
