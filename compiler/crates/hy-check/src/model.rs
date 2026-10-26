@@ -462,6 +462,11 @@ impl<'a> Checker<'a> {
             .map(|t| t.render())
             .unwrap_or_else(|| b.shape.render())
     }
+    /// The base name of a dotted type path (`cache[int]` -> `cache`).
+    /// Used by buildable.rs for method_decls lookups.
+    pub(crate) fn base_named_type_str(name: &str) -> String {
+        name.split('[').next().unwrap_or(name).to_string()
+    }
     /// Stub: constant integer value at an expression position.
     /// Ported from emit_guard.rs on the author branch; full implementation
     /// folds constant expressions and resolves local bindings.

@@ -86,7 +86,7 @@ fn fixed_width_int_range(name: &str) -> Option<(i128, i128)> {
 /// a full constant folder: int literals (any base the lexer keeps),
 /// unary `-`, and parentheses. Anything else (idents, calls, binary ops)
 /// is out of scope for HYB-E6002.
-fn const_int_value(e: &Expr) -> Option<i128> {
+pub(crate) fn const_int_value(e: &Expr) -> Option<i128> {
     match unwrap_parens(e) {
         Expr::Lit {
             kind: LitKind::Int(s),

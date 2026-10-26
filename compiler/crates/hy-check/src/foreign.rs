@@ -37,6 +37,11 @@ pub(crate) const BUILTIN_PACKAGES: &[&str] = &[
     "errors",
 ];
 
+/// Is `pkg` a curated import that the checker models boundary descriptors for?
+pub(crate) fn is_curated_import(pkg: &str) -> bool {
+    BUILTIN_PACKAGES.contains(&pkg)
+}
+
 /// How a call uses its receiver / arguments (O7 handle modes + O13 consume).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CallMode {

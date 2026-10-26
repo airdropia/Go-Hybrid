@@ -40,6 +40,7 @@
 mod buildable;
 mod arith;
 mod const_overflow;
+mod const_init;
 mod closures;
 mod foreign;
 mod freeze;
