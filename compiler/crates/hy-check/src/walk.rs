@@ -330,6 +330,11 @@ pub(crate) fn expr_uses(expr: &Expr, out: &mut Vec<Use>) {
                 is_write: false,
                 via_move: true,
             }),
+            Expr::Field { base, .. } => {
+                // Move of a field access: collect uses from base, including
+                // Index/Slice subexpressions (issue #1814 fix 1).
+                expr_uses(base, out);
+            }
             _ => expr_uses(operand, out),
         },
         Expr::Try { operand, .. } => expr_uses(operand, out),
@@ -373,7 +378,14 @@ pub(crate) fn expr_uses(expr: &Expr, out: &mut Vec<Use>) {
         // A5 perimeter: closure bodies are not analyzed HERE (uses/calls/
         // loans stay outside); their boundary statements are checked by the
         // closures.rs pass (O4.9).
-        Expr::FnLit { .. } => {}
+        Expr::FnLit { body, .. } => {
+            // Capture closure body uses: bindings used inside a closure body
+            // are captures and count as uses (issue #1814 fix 2).
+            // Walk the body's statements to record uses of captured bindings.
+            for (stmt, _) in &walk::flatten(body) {
+                own_uses(stmt, out);
+            }
+        }
         Expr::Paren { inner, .. } => expr_uses(inner, out),
     }
 }
@@ -424,7 +436,7 @@ pub(crate) fn own_calls<'a>(stmt: &'a Stmt, out: &mut Vec<CallRef<'a>>) {
                 expr_calls(lo, out);
                 expr_calls(hi, out);
             }
-            ForKind::Iterate { .. } => {} // handled with loop-extent loans
+            ForKind::Iterate { expr, .. } => expr_calls(expr, out),
             ForKind::Infinite => {}
         },
         Stmt::Return { values, .. } => {
