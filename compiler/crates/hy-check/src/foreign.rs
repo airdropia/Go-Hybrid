@@ -111,9 +111,7 @@ pub(crate) fn foreign_named_type(name: &str) -> Option<TypeShape> {
 /// Mode of a package-level call: `serde_json.parse(...)`, `fmt.println(...)`.
 pub(crate) fn package_mode(pkg: &str, method: &str) -> CallMode {
     match (pkg, method) {
-        ("serde_json", "parse") | ("serde_json", "new_object") | ("flate2", "new_writer") => {
-            CallMode::Produce
-        }
+        ("serde_json", "parse") | ("serde_json", "new_object") | ("serde_json", "new_array") | ("flate2", "new_writer") => CallMode::Produce,
         ("serde_json", "to_string_pretty")
         | ("serde_json", "array")
         | ("serde_json", "get")
@@ -129,7 +127,7 @@ pub(crate) fn package_mode(pkg: &str, method: &str) -> CallMode {
 /// Result shape of a package-level call (for defines / loop variables).
 pub(crate) fn package_result(pkg: &str, method: &str) -> TypeShape {
     match (pkg, method) {
-        ("serde_json", "parse") | ("serde_json", "new_object") => {
+        ("serde_json", "parse") | ("serde_json", "new_object") | ("serde_json", "new_array") => {
             TypeShape::OwnHandle("serde_json.value".into())
         }
         ("flate2", "new_writer") => TypeShape::OwnHandle("flate2.writer".into()),
@@ -159,7 +157,7 @@ pub(crate) fn method_mode(recv_type: &str, method: &str) -> CallMode {
             "serde_json.value" | "serde_json.view",
             "array" | "get" | "int" | "string" | "to_string_pretty",
         ) => CallMode::Borrow,
-        ("serde_json.value" | "serde_json.view", "set" | "remove") => CallMode::Mutate,
+        ("serde_json.value" | "serde_json.view", "set" | "remove" | "push_string") => CallMode::Mutate,
         ("flate2.writer", "write") => CallMode::Mutate,
         ("flate2.writer", "finish") => CallMode::Consume,
         _ => CallMode::Unknown,
