@@ -6,8 +6,8 @@
 //! variable, no unification, no coercion — just enough structure to answer
 //! "is this value sendable?" (O4) and "which loan rules apply?" (O7/O8/O12).
 
-use hy_diag::{Diagnostic, ManagedBlockAudit, Span};
-use hy_syntax::{Expr, File, FnDecl, TypeExpr};
+use hy_diag::{Diagnostic, ManagedBlockAudit, Pos, Span};
+use hy_syntax::{Expr, File, FnDecl, TypeExpr, TypeParam};
 use std::collections::{HashMap, HashSet};
 
 // ---------------------------------------------------------------------------
@@ -386,8 +386,20 @@ pub(crate) struct Checker<'a> {
     pub path: String,
     /// struct name -> (field name, field type) — file-level struct decls.
     pub structs: HashMap<String, Vec<(String, TypeExpr)>>,
+    /// struct name -> declared type parameters (including empty-field structs).
+    pub struct_type_params: HashMap<String, Vec<TypeParam>>,
+    /// enum name -> declared variant names in source order.
+    pub enums: HashMap<String, Vec<String>>,
+    /// enum name -> whether the first variant is payload-free.
+    pub enum_has_zero_value: HashMap<String, bool>,
+    /// type alias name -> target TypeExpr.
+    pub type_aliases: HashMap<String, TypeExpr>,
+    /// zero-defined binding names (let/const whose RHS is zero).
+    pub zd_defined: HashSet<String>,
     /// fn name -> decl (return-type inference for single-value defines).
     pub fns: HashMap<String, &'a FnDecl>,
+    /// (struct_base_name, method_name) -> fn decl — method declarations.
+    pub method_decls: HashMap<(String, String), &'a FnDecl>,
     /// file-level consts (immutable, visible in every fn).
     pub consts: HashMap<String, Binding>,
     /// Known foreign package prefixes (imports ∪ the builtin table).
@@ -420,7 +432,13 @@ impl<'a> Checker<'a> {
             file,
             path: file.path.clone(),
             structs: HashMap::new(),
+            struct_type_params: HashMap::new(),
+            enums: HashMap::new(),
+            enum_has_zero_value: HashMap::new(),
+            type_aliases: HashMap::new(),
+            zd_defined: HashSet::new(),
             fns: HashMap::new(),
+            method_decls: HashMap::new(),
             consts: HashMap::new(),
             packages: HashSet::new(),
             diags: Vec::new(),
@@ -443,6 +461,27 @@ impl<'a> Checker<'a> {
         b.ty.as_ref()
             .map(|t| t.render())
             .unwrap_or_else(|| b.shape.render())
+    }
+    /// Stub: constant integer value at an expression position.
+    /// Ported from emit_guard.rs on the author branch; full implementation
+    /// folds constant expressions and resolves local bindings.
+    pub(crate) fn const_int_value_at(&self, _expr: &Expr, _use_pos: Pos, _depth: usize) -> Option<i128> {
+        None
+    }
+
+    /// Stub: constant string length at an expression position.
+    pub(crate) fn const_string_len_at(&self, _expr: &Expr, _use_pos: Pos, _depth: usize) -> Option<i128> {
+        None
+    }
+
+    /// Stub: constant array length at an expression position.
+    pub(crate) fn const_array_len_at(&self, _expr: &Expr, _use_pos: Pos, _depth: usize) -> Option<i128> {
+        None
+    }
+
+    /// Stub: resolve a type alias to its target type.
+    pub(crate) fn resolve_type_alias(&self, ty: &TypeExpr) -> TypeExpr {
+        ty.clone()
     }
 }
 
