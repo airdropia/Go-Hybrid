@@ -271,6 +271,18 @@ impl<'a> Checker<'a> {
             return;
         }
         match name {
+            "append" => {
+                if args.len() < 2 {
+                    self.emit_builtin(
+                        span,
+                        format!(
+                            "`append` requires at least 2 arguments (slice, element...), found {} (HYB-E2005)",
+                            args.len()
+                        ),
+                    );
+                    return;
+                }
+            }
             "make" => self.check_make_args(args, span),
             "len" => self.check_len_cap_args("len", args, span, /*cap=*/ false),
             "cap" => self.check_len_cap_args("cap", args, span, /*cap=*/ true),
