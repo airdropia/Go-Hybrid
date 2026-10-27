@@ -97,6 +97,8 @@ pub fn check_file(file: &File) -> CheckResult {
         check_fn(&mut ck, f);
     }
 
+    buildable::check_buildable(&mut ck); // Row 13 BUILDABLE: operand-kind checks
+
     let mut diags = ck.diags;
     diags.sort_by(|a, b| {
         (
