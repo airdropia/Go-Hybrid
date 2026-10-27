@@ -232,7 +232,7 @@ pub(crate) fn own_uses(stmt: &Stmt, out: &mut Vec<Use>) {
             }
         }
         Stmt::Expr { expr, .. } => expr_uses(expr, out),
-        Stmt::Send { chan, value, is_move } => {
+        Stmt::Send { chan, value, is_move, .. } => {
             expr_uses(chan, out);
             if *is_move {
                 // Parser stripped Expr::Move and stored is_move: true.
