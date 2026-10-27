@@ -234,7 +234,7 @@ pub(crate) fn own_uses(stmt: &Stmt, out: &mut Vec<Use>) {
         Stmt::Expr { expr, .. } => expr_uses(expr, out),
         Stmt::Send { chan, value, is_move, .. } => {
             expr_uses(chan, out);
-            if *is_move {
+            if is_move {
                 // Parser stripped Expr::Move and stored is_move: true.
                 // Record the root ident as a move use (via_move: true)
                 // so A1b freeze-after-move fires correctly.
