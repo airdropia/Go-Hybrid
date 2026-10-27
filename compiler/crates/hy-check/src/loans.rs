@@ -572,7 +572,6 @@ impl<'a> Checker<'a> {
                         return false;
                     }
                 }
-                cr.args.iter().any(&arg_root_is_param)
                 // method receiver: `param.bump()` — the receiver IS the param,
                 // and the method may mutate it. Fail closed.
                 if let Expr::Ident { name: rname, .. } = &**base {
@@ -580,6 +579,7 @@ impl<'a> Checker<'a> {
                         return true;
                     }
                 }
+                cr.args.iter().any(&arg_root_is_param)
             }
             _ => cr.args.iter().any(&arg_root_is_param),
         }
