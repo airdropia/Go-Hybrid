@@ -495,7 +495,7 @@ impl<'a> Collector<'a> {
         let Some(top) = self.scopes.last_mut() else {
             return;
         };
-        if top.contains_key(name) {
+        if top.contains_key(&name) {
             return;
         }
         let id = self.defines.len();
@@ -517,7 +517,7 @@ impl<'a> Collector<'a> {
             .scopes
             .iter()
             .rev()
-            .any(|layer| layer.contains_key(name))
+            .any(|layer| layer.contains_key(&name))
         {
             self.roots.insert(name.to_string());
         }
@@ -559,25 +559,25 @@ impl<'a> Collector<'a> {
             .scopes
             .iter()
             .rev()
-            .any(|layer| layer.contains_key(name))
+            .any(|layer| layer.contains_key(&name))
         {
             return;
         }
         // A file-level const of the same name is a value, not the type.
-        if self.ck.consts.contains_key(name) {
+        if self.ck.consts.contains_key(&name) {
             return;
         }
         // A top-level fn of the same name is callable, not the type.
         let head = Checker::base_named_type_str(name);
-        if self.ck.fns.contains_key(name) || self.ck.fns.contains_key(head) {
+        if self.ck.fns.contains_key(&name) || self.ck.fns.contains_key(&head) {
             return;
         }
         // The name must actually resolve to a declared type — a struct, an
         // enum, a type alias, or a built-in conversion target. Anything else
         // stays fail-open.
-        let is_declared_type = self.ck.structs.contains_key(name)
-            || self.ck.enums.contains_key(name)
-            || self.ck.type_aliases.contains_key(name)
+        let is_declared_type = self.ck.structs.contains_key(&name)
+            || self.ck.enums.contains_key(&name)
+            || self.ck.type_aliases.contains_key(&name)
             || crate::const_init::is_conversion_type_name(name);
         if !is_declared_type {
             return;
@@ -1598,7 +1598,7 @@ impl<'a> Collector<'a> {
         if head == "map" {
             return;
         }
-        let Some(tparams) = self.ck.struct_type_params.get(head) else {
+        let Some(tparams) = self.ck.struct_type_params.get(&head) else {
             return;
         };
         let expected = tparams.len();
@@ -1681,10 +1681,10 @@ impl<'a> Collector<'a> {
         }
         let name = name.trim();
         let base = Checker::base_named_type_str(name);
-        if self.ck.structs.contains_key(base) || self.ck.struct_type_params.contains_key(base) {
+        if self.ck.structs.contains_key(&base) || self.ck.struct_type_params.contains_key(&base) {
             return OpKind::Struct(Some(name.to_string()));
         }
-        if let Some(target) = self.ck.type_aliases.get(base) {
+        if let Some(target) = self.ck.type_aliases.get(&base) {
             return self.kind_of_ty(target, depth + 1);
         }
         match name {
@@ -1783,7 +1783,7 @@ impl<'a> Collector<'a> {
         }
         let base = &full_name[..open];
         let inner = &full_name[open + 1..full_name.len() - 1];
-        let Some(tparams) = self.ck.struct_type_params.get(base) else {
+        let Some(tparams) = self.ck.struct_type_params.get(&base) else {
             return map;
         };
         let args = split_top_level_type_args(inner);
@@ -1833,7 +1833,7 @@ impl<'a> Collector<'a> {
     fn struct_field_kind(&self, k: &OpKind, field: &str) -> Option<OpKind> {
         let full_name = self.struct_name(k)?;
         let base_name = Checker::base_named_type_str(&full_name);
-        let fields = self.ck.structs.get(base_name)?;
+        let fields = self.ck.structs.get(&base_name)?;
         let subst = self.struct_type_arg_map(&full_name);
         fields
             .iter()
@@ -1851,7 +1851,7 @@ impl<'a> Collector<'a> {
                     return OpKind::Bool;
                 }
                 let head = Checker::base_named_type_str(name);
-                if let Some(f) = self.ck.fns.get(name.as_str()).or_else(|| self.ck.fns.get(head)) {
+                if let Some(f) = self.ck.fns.get(name.as_str()).or_else(|| self.ck.fns.get(&head)) {
                     return OpKind::Fn(
                         f.results
                             .iter()
@@ -2041,7 +2041,7 @@ impl<'a> Collector<'a> {
                     return Some(vec![conv]);
                 }
                 let head = Checker::base_named_type_str(name);
-                if let Some(f) = self.ck.fns.get(name.as_str()).or_else(|| self.ck.fns.get(head)) {
+                if let Some(f) = self.ck.fns.get(name.as_str()).or_else(|| self.ck.fns.get(&head)) {
                     return Some(
                         f.results
                             .iter()
@@ -2356,7 +2356,7 @@ impl<'a> Collector<'a> {
     /// builtin never reaches this point because builtins are not in `fns`.
     fn check_user_fn_arity(&mut self, name: &str, args: &[CallArg], span: Span) {
         let head = Checker::base_named_type_str(name);
-        let Some(f) = self.ck.fns.get(name).or_else(|| self.ck.fns.get(head)) else {
+        let Some(f) = self.ck.fns.get(name).or_else(|| self.ck.fns.get(&head)) else {
             return;
         };
         // Generic instantiations (`id[int](x)`) carry type arguments the
@@ -2460,7 +2460,7 @@ impl<'a> Collector<'a> {
 
     fn check_user_fn_arg_types(&mut self, name: &str, args: &[CallArg]) {
         let head = Checker::base_named_type_str(name);
-        let Some(f) = self.ck.fns.get(name).or_else(|| self.ck.fns.get(head)) else {
+        let Some(f) = self.ck.fns.get(name).or_else(|| self.ck.fns.get(&head)) else {
             return;
         };
         if !f.type_params.is_empty() {
@@ -2665,7 +2665,7 @@ impl<'a> Collector<'a> {
             return;
         };
         let head = Checker::base_named_type_str(name);
-        let Some(f) = self.ck.fns.get(name).or_else(|| self.ck.fns.get(head)) else {
+        let Some(f) = self.ck.fns.get(name).or_else(|| self.ck.fns.get(&head)) else {
             return;
         };
         let want = f.params.len();
@@ -2743,7 +2743,7 @@ impl<'a> Collector<'a> {
             return;
         };
         let head = Checker::base_named_type_str(name);
-        let Some(f) = self.ck.fns.get(name).or_else(|| self.ck.fns.get(head)) else {
+        let Some(f) = self.ck.fns.get(name).or_else(|| self.ck.fns.get(&head)) else {
             return;
         };
         if !f.type_params.is_empty() || f.params.len() == args.len() {
@@ -2859,10 +2859,10 @@ impl<'a> Collector<'a> {
                         };
                     }
                 }
-                if self.file_consts.contains_key(name) {
+                if self.file_consts.contains_key(&name) {
                     return false;
                 }
-                if self.ck.fns.contains_key(name) || self.ck.file.fns().any(|f| &f.name == name) {
+                if self.ck.fns.contains_key(&name) || self.ck.file.fns().any(|f| &f.name == name) {
                     return false;
                 }
                 if self.is_imported_pkg_root(name) {
