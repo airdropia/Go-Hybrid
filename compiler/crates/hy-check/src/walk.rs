@@ -234,7 +234,7 @@ pub(crate) fn own_uses(stmt: &Stmt, out: &mut Vec<Use>) {
         Stmt::Expr { expr, .. } => expr_uses(expr, out),
         Stmt::Send { chan, value, is_move } => {
             expr_uses(chan, out);
-            if is_move {
+            if *is_move {
                 // Parser stripped Expr::Move and stored is_move: true.
                 // Record the root ident as a move use (via_move: true)
                 // so A1b freeze-after-move fires correctly.
@@ -293,27 +293,9 @@ pub(crate) fn own_uses(stmt: &Stmt, out: &mut Vec<Use>) {
         Stmt::Select { arms, .. } => {
             for arm in arms {
                 match &arm.kind {
-                    SelectArmKind::Send { chan, value, is_move } => {
+                    SelectArmKind::Send { chan, value } => {
                         expr_uses(chan, out);
-                        if is_move {
-                            if let Some(path) = expr_path(value) {
-                                let root = path.split('.').next().unwrap_or("");
-                                if !root.is_empty() {
-                                    out.push(Use {
-                                        name: root.to_string(),
-                                        span: value.span(),
-                                        is_write: false,
-                                        via_move: true,
-                                    });
-                                } else {
-                                    expr_uses(value, out);
-                                }
-                            } else {
-                                expr_uses(value, out);
-                            }
-                        } else {
-                            expr_uses(value, out);
-                        }
+                        expr_uses(value, out);
                     }
                     SelectArmKind::Recv { chan, .. } => expr_uses(chan, out),
                     SelectArmKind::Default => {}
