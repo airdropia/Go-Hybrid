@@ -4016,7 +4016,7 @@ impl<'a> Collector<'a> {
             self.check_named_type_instantiation(arg, span);
         }
         let base_key = Checker::base_named_type_str(fn_key);
-        let Some(f) = self.ck.fns.get(base_key) else {
+        let Some(f) = self.ck.fns.get(&base_key) else {
             return;
         };
         let expected = f.type_params.len();
