@@ -382,7 +382,7 @@ pub(crate) fn expr_uses(expr: &Expr, out: &mut Vec<Use>) {
             // Capture closure body uses: bindings used inside a closure body
             // are captures and count as uses (issue #1814 fix 2).
             // Walk the body's statements to record uses of captured bindings.
-            for (stmt, _) in &walk::flatten(body) {
+            for (stmt, _) in &flatten(body).stmts {
                 own_uses(stmt, out);
             }
         }
