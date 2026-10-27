@@ -495,7 +495,7 @@ impl<'a> Collector<'a> {
         let Some(top) = self.scopes.last_mut() else {
             return;
         };
-        if top.contains_key(&name) {
+        if top.contains_key(name) {
             return;
         }
         let id = self.defines.len();
@@ -517,7 +517,7 @@ impl<'a> Collector<'a> {
             .scopes
             .iter()
             .rev()
-            .any(|layer| layer.contains_key(&name))
+            .any(|layer| layer.contains_key(name))
         {
             self.roots.insert(name.to_string());
         }
@@ -559,25 +559,25 @@ impl<'a> Collector<'a> {
             .scopes
             .iter()
             .rev()
-            .any(|layer| layer.contains_key(&name))
+            .any(|layer| layer.contains_key(name))
         {
             return;
         }
         // A file-level const of the same name is a value, not the type.
-        if self.ck.consts.contains_key(&name) {
+        if self.ck.consts.contains_key(name) {
             return;
         }
         // A top-level fn of the same name is callable, not the type.
         let head = Checker::base_named_type_str(name);
-        if self.ck.fns.contains_key(&name) || self.ck.fns.contains_key(&head) {
+        if self.ck.fns.contains_key(name) || self.ck.fns.contains_key(&head) {
             return;
         }
         // The name must actually resolve to a declared type — a struct, an
         // enum, a type alias, or a built-in conversion target. Anything else
         // stays fail-open.
-        let is_declared_type = self.ck.structs.contains_key(&name)
-            || self.ck.enums.contains_key(&name)
-            || self.ck.type_aliases.contains_key(&name)
+        let is_declared_type = self.ck.structs.contains_key(name)
+            || self.ck.enums.contains_key(name)
+            || self.ck.type_aliases.contains_key(name)
             || crate::const_init::is_conversion_type_name(name);
         if !is_declared_type {
             return;
@@ -2862,7 +2862,7 @@ impl<'a> Collector<'a> {
                 if self.file_consts.contains_key(&name) {
                     return false;
                 }
-                if self.ck.fns.contains_key(&name) || self.ck.file.fns().any(|f| &f.name == name) {
+                if self.ck.fns.contains_key(name) || self.ck.file.fns().any(|f| &f.name == name) {
                     return false;
                 }
                 if self.is_imported_pkg_root(name) {
