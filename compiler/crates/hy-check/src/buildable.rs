@@ -1598,7 +1598,7 @@ impl<'a> Collector<'a> {
         if head == "map" {
             return;
         }
-        let Some(tparams) = self.ck.struct_type_params.get(head.as_str()) else {
+        let Some(tparams) = self.ck.struct_type_params.get(head) else {
             return;
         };
         let expected = tparams.len();
@@ -1783,7 +1783,7 @@ impl<'a> Collector<'a> {
         }
         let base = &full_name[..open];
         let inner = &full_name[open + 1..full_name.len() - 1];
-        let Some(tparams) = self.ck.struct_type_params.get(base.as_str()) else {
+        let Some(tparams) = self.ck.struct_type_params.get(base) else {
             return map;
         };
         let args = split_top_level_type_args(inner);
