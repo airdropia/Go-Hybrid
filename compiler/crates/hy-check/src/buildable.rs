@@ -2859,7 +2859,7 @@ impl<'a> Collector<'a> {
                         };
                     }
                 }
-                if self.file_consts.contains_key(&name) {
+                if self.file_consts.contains_key(name) {
                     return false;
                 }
                 if self.ck.fns.contains_key(name) || self.ck.file.fns().any(|f| &f.name == name) {
