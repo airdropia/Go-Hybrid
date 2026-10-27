@@ -739,6 +739,28 @@ impl Expr {
             | Expr::Paren { span, .. } => *span,
         }
     }
+    /// Distinguished from a slice-of-arrays literal `[][N]T{…}` by the
+    /// array `TypeExpr` sharing the literal's opening `[` source position.
+    pub fn as_array_lit(&self) -> Option<(Option<&Expr>, &TypeExpr, &TypeExpr)> {
+        if let Expr::SliceLit {
+            elem: Some(t),
+            span,
+            ..
+        } = self
+        {
+            if let TypeExpr::Array {
+                len,
+                elem,
+                span: ty_span,
+            } = t.as_ref()
+            {
+                if ty_span.start == span.start {
+                    return Some((len.as_deref(), elem.as_ref(), t.as_ref()));
+                }
+            }
+        }
+        None
+    }
 
     /// The root identifier of an access chain, if any
     /// (`stats.mu.lock` → "stats"; `agg` → "agg"; literals → None).
